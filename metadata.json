@@ -1,0 +1,6 @@
+{
+  "name": "FINANCIAL SYSTEM",
+  "description": "Sistem Informasi Akuntansi & Operasional Komprehensif Enterprise Resource Planning dengan Jurnal Umum, Stok Gudang, Manajemen Anggota, Kas Bank, Invoice Faktur, dan Pelaporan Neraca SHU.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

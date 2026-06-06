@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@400;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+}
+
+@utility dark-card {
+  .dark & {
+    background-color: var(--color-slate-900);
+    border-color: var(--color-slate-800);
+    color: var(--color-slate-100);
+  }
+}
+
+/* Global Dark Mode Overrides for Legacy Classes */
+.dark body {
+  background-color: var(--color-slate-950);
+  color: var(--color-slate-100);
+}
+
+.dark .bg-white, .dark .bg-slate-50, .dark .bg-gray-50, .dark .bg-slate-100, .dark .bg-gray-100 {
+  background-color: var(--color-slate-900) !important;
+}
+
+.dark .text-gray-900, .dark .text-slate-900, .dark .text-black {
+  color: var(--color-slate-100) !important;
+}
+
+.dark .text-gray-800, .dark .text-gray-700, .dark .text-slate-800, .dark .text-slate-700 {
+  color: var(--color-slate-200) !important;
+}
+
+.dark .text-gray-600, .dark .text-gray-500, .dark .text-slate-600, .dark .text-slate-500 {
+  color: var(--color-slate-400) !important;
+}
+
+.dark .border-gray-50, .dark .border-gray-100, .dark .border-gray-200, .dark .border-slate-100, .dark .border-slate-200 {
+  border-color: var(--color-slate-800) !important;
+}
+
+.dark .bg-emerald-50 {
+  background-color: var(--color-emerald-950) !important;
+  color: var(--color-emerald-400) !important;
+}
+
+.dark .bg-blue-50 {
+  background-color: var(--color-blue-950) !important;
+  color: var(--color-blue-400) !important;
+}
+
+.dark .bg-teal-50 {
+  background-color: var(--color-teal-950) !important;
+  color: var(--color-teal-400) !important;
+}
+
+.dark .bg-purple-50 {
+  background-color: var(--color-purple-950) !important;
+  color: var(--color-purple-400) !important;
+}
+
+.dark .bg-rose-50 {
+  background-color: var(--color-rose-950) !important;
+  color: var(--color-rose-400) !important;
+}
+
+.dark .bg-amber-50 {
+  background-color: var(--color-amber-950) !important;
+  color: var(--color-amber-400) !important;
+}
+
+.dark .bg-red-50 {
+  background-color: var(--color-red-950) !important;
+  color: var(--color-red-400) !important;
+}
+
+.dark .shadow-sm, .dark .shadow, .dark .shadow-md {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3) !important;
+}

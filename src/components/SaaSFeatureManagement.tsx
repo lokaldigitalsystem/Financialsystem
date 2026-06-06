@@ -1,0 +1,503 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect } from 'react';
+import { 
+  LayoutDashboard, 
+  BookOpen, 
+  Package, 
+  ClipboardCheck, 
+  Wallet, 
+  TrendingUp, 
+  FileSpreadsheet, 
+  FileText, 
+  Users, 
+  ShieldAlert,
+  ShieldCheck,
+  Lock,
+  Sparkles,
+  Save,
+  Building2,
+  Crown,
+  Search,
+  CheckCircle,
+  XCircle,
+  Info,
+  Sliders,
+  HelpCircle
+} from 'lucide-react';
+import { doc, getDoc, setDoc, onSnapshot, db } from '../supabase';
+import { Tenant } from '../types';
+import { logSecurityEvent } from '../utils/auditLogger';
+
+// Map of system modules we can toggle
+export const SYSTEM_MODULES = [
+  { id: "dashboard", name: "Dashboard Ringkasan", desc: "Dashboard utama, widget statistik, saldo berjalan, & pemberitahuan.", icon: LayoutDashboard },
+  { id: "jurnal", name: "Jurnal Umum Akuntansi", desc: "Siklus pencatatan pembukuan debet-kredit akuntansi ganda.", icon: BookOpen },
+  { id: "stok", name: "Logistik & Stok Barang", desc: "Katalog inventaris pupuk, bibit, sembako, & log gudang.", icon: Package },
+  { id: "stockopname", name: "Stock Opname Fisik", desc: "Pemeriksaan fisik stok manual, diskrepansi, & pencatatan audit.", icon: ClipboardCheck },
+  { id: "kasbank", name: "Kas & Arus Rekening", desc: "Sistem kasir tunai instansi & transfer bank eksternal.", icon: Wallet },
+  { id: "asettetap", name: "Aset Tetap & Depresiasi", desc: "Penyusutan aset mekanik / inventaris berkala otomatis.", icon: TrendingUp },
+  { id: "invoice", name: "E-Billing & Tagihan", desc: "Pengeluaran struk digital, penagihan piutang, & tempo lunas.", icon: FileSpreadsheet },
+  { id: "laporan", name: "Laporan Buku Besar", desc: "Neraca saldo otomatis & Laporan Laba Rugi akhir periode.", icon: FileText },
+  { id: "kontak", name: "Hub Kontak & Anggota", desc: "Database supplier pupuk, profil anggota simpan pinjam.", icon: Users },
+  { id: "security_audit", name: "Jejak Audit Digital", desc: "Log aktivitas forensik, IP address login, & regulasi kepatuhan.", icon: ShieldAlert },
+];
+
+export const PLAN_DEFAULT_FEATURES: Record<"Trial" | "Basic" | "Premium" | "Enterprise", string[]> = {
+  Trial: ["dashboard", "jurnal", "kontak", "kasbank"],
+  Basic: ["dashboard", "jurnal", "kontak", "kasbank", "stok", "laporan"],
+  Premium: ["dashboard", "jurnal", "kontak", "kasbank", "stok", "laporan", "stockopname", "invoice"],
+  Enterprise: ["dashboard", "jurnal", "kontak", "kasbank", "stok", "laporan", "stockopname", "invoice", "asettetap", "security_audit"]
+};
+
+interface SaaSFeatureManagementProps {
+  tenants: Tenant[];
+  currentUserEmail: string;
+  currentUserName: string;
+}
+
+export const SaaSFeatureManagement: React.FC<SaaSFeatureManagementProps> = ({
+  tenants,
+  currentUserEmail,
+  currentUserName
+}) => {
+  // Global Plan Tiering state
+  const [tieringMatrix, setTieringMatrix] = useState<Record<string, string[]>>(PLAN_DEFAULT_FEATURES);
+  const [loading, setLoading] = useState(true);
+  const [savingMatrix, setSavingMatrix] = useState(false);
+
+  // Tenant search & overrides state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
+  
+  // Notification Toast
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const showToast = (type: 'success' | 'error', message: string) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  // Listen to the Global Feature Matrix doc on cloud
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "system_config", "features_tiering"), (snap) => {
+      if (snap.exists()) {
+        setTieringMatrix(snap.data() as Record<string, string[]>);
+      } else {
+        // Create initial default document based on constants
+        setDoc(doc(db, "system_config", "features_tiering"), PLAN_DEFAULT_FEATURES)
+          .catch(e => console.warn("Failed initializing default feature matrix in db", e));
+      }
+      setLoading(false);
+    }, (err) => {
+      console.warn("Could not listen to global feature matrix doc:", err);
+      setLoading(false);
+    });
+
+    return () => unsub();
+  }, []);
+
+  // Update selectedTenant metadata if tenants refreshes
+  useEffect(() => {
+    if (selectedTenant) {
+      const up = tenants.find(t => t.id === selectedTenant.id);
+      if (up) setSelectedTenant(up);
+    }
+  }, [tenants, selectedTenant?.id]);
+
+  // Handle saving Plan Module Matrix
+  const handleSaveMatrix = async () => {
+    setSavingMatrix(true);
+    try {
+      await setDoc(doc(db, "system_config", "features_tiering"), tieringMatrix);
+      
+      // Log the security event
+      await logSecurityEvent({
+        tenantId: "supercloud",
+        tenantName: "Developer System",
+        actorEmail: currentUserEmail,
+        actorName: currentUserName,
+        category: "Keamanan",
+        severity: "CRITICAL",
+        action: "Penyuntingan Matriks Modul Global",
+        details: "Hubungan pemetaan modul & fitur per paket tiering berhasil diubah oleh superadmin.",
+        status: "Sukses"
+      });
+
+      showToast('success', 'Matriks standardisasi fitur tiering berhasil disimpan di awan.');
+    } catch (err: any) {
+      showToast('error', `Gagal menyimpan matriks: ${err.message}`);
+    } finally {
+      setSavingMatrix(false);
+    }
+  };
+
+  // Toggle module inside a specific plan tier configuration
+  const handleTogglePlanModule = (plan: "Trial" | "Basic" | "Premium" | "Enterprise", moduleId: string) => {
+    const currentList = [...(tieringMatrix[plan] || [])];
+    let nextList: string[];
+    if (currentList.includes(moduleId)) {
+      nextList = currentList.filter(id => id !== moduleId);
+    } else {
+      nextList = [...currentList, moduleId];
+    }
+
+    setTieringMatrix({
+      ...tieringMatrix,
+      [plan]: nextList
+    });
+  };
+
+  // Toggle custom feature override for a specific tenant directly
+  const handleToggleTenantOverride = async (tenantId: string, moduleId: string) => {
+    const tenant = tenants.find(t => t.id === tenantId);
+    if (!tenant) return;
+
+    // By default, if they don't have override array yet, initialize with their PLAN capabilities as defaults
+    // OR we can store ONLY the overrides. Let's make starting customFeatures array directly contain their current active features + or - this modular feature.
+    const currentOverrides = tenant.customFeatures || tieringMatrix[tenant.plan] || PLAN_DEFAULT_FEATURES[tenant.plan] || [];
+    let updatedList: string[];
+
+    if (currentOverrides.includes(moduleId)) {
+      updatedList = currentOverrides.filter(id => id !== moduleId);
+    } else {
+      updatedList = [...currentOverrides, moduleId];
+    }
+
+    try {
+      // Update the tenant doc in db
+      await setDoc(doc(db, "tenants", tenantId), {
+        ...tenant,
+        customFeatures: updatedList
+      }, { merge: true });
+
+      // Log security event for audit compliance records
+      await logSecurityEvent({
+        tenantId: "supercloud",
+        tenantName: "Developer System",
+        actorEmail: currentUserEmail,
+        actorName: currentUserName,
+        category: "Hak Akses",
+        severity: "WARNING",
+        action: "Perubahan Modul Tambahan Khusus",
+        details: `Override kustom fitur '${moduleId}' berhasil disetel untuk tenant '${tenant.name}' (${tenantId}).`,
+        status: "Sukses"
+      });
+
+      showToast('success', `Berhasil mengubah hak akses modul kustom untuk ${tenant.name}.`);
+    } catch (err: any) {
+      showToast('error', `Gagal menyimpan audit kustom: ${err.message}`);
+    }
+  };
+
+  // Reset tenant custom overrides back to plan defaults
+  const handleClearTenantOverrides = async (tenantId: string) => {
+    const tenant = tenants.find(t => t.id === tenantId);
+    if (!tenant) return;
+
+    try {
+      await setDoc(doc(db, "tenants", tenantId), {
+        ...tenant,
+        customFeatures: null // Setting to null clears override so it resolves dynamically to plan standard
+      }, { merge: true });
+
+      await logSecurityEvent({
+        tenantId: "supercloud",
+        tenantName: "Developer System",
+        actorEmail: currentUserEmail,
+        actorName: currentUserName,
+        category: "Hak Akses",
+        severity: "INFO",
+        action: "Penyetelan Ulang Hak Akses Standar",
+        details: `Menghapus seluruh modul tambahan kustom untuk tenant '${tenant.name}' (${tenantId}) kembali ke standar paket.`,
+        status: "Sukses"
+      });
+
+      showToast('success', `Berhasil mengembalikan hak akses ${tenant.name} ke default standar.`);
+    } catch (err: any) {
+      showToast('error', `Gagal mereset: ${err.message}`);
+    }
+  };
+
+  // Search filter matching
+  const filteredTenants = tenants.filter(t => {
+    const q = searchQuery.toLowerCase();
+    return t.name.toLowerCase().includes(q) || t.id.toLowerCase().includes(q) || t.ownerEmail.toLowerCase().includes(q) || t.plan.toLowerCase().includes(q);
+  });
+
+  return (
+    <div className="space-y-6 text-left">
+      
+      {/* TOAST NOTIFICATION BLOCK */}
+      {toast && (
+        <div className={`p-4 rounded-2xl text-xs font-bold shadow-md border animate-bounce fixed top-4 right-4 z-50 ${toast.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-red-50 text-red-800 border-red-100'}`}>
+          {toast.message}
+        </div>
+      )}
+
+      {/* INTRODUCTION HERO INFO PANEL */}
+      <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="space-y-1.5">
+          <span className="text-[10px] font-black tracking-widest text-[#001bb5] uppercase flex items-center gap-2 mb-1 animate-pulse">
+            <Sliders className="h-4.5 w-4.5 text-indigo-650" /> FEATURE FLAGGING &amp; MODULAR TIERING ENGINE
+          </span>
+          <h2 className="text-xl font-black text-slate-900 leading-tight uppercase tracking-tight">
+            Konfigurator Paket &amp; Tambahan Layanan (Add-on Modules)
+          </h2>
+          <p className="text-xs text-slate-500 leading-relaxed font-semibold max-w-4xl">
+            Sistem pengatur pembatasan akses digital desa. Anda dapat mengkonfigurasi hak akses modul bawaan per-taraf paket berlangganan secara global (Trial &rarr; Basic &rarr; Premium &rarr; Enterprise) ATAU menyematkan hak akses kustom (add-on khusus) langsung pada penyewa tertentu.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* TAB COLUMN 1: GLOBAL PLANS INTEGRATION MATRIX CONFIG (Lg: 7 cols) */}
+        <div className="lg:col-span-7 bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm flex flex-col justify-between space-y-5">
+          <div className="border-b border-slate-50 pb-3 flex items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <span className="text-[9px] font-black text-indigo-600 uppercase tracking-widest block">Metode Standardisasi Global</span>
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Crown className="h-4.5 w-4.5 text-[#001bb5]" /> Matriks Hak Akses Standardisasi Paket
+              </h3>
+            </div>
+            <button
+              onClick={handleSaveMatrix}
+              disabled={savingMatrix}
+              type="button"
+              className="px-4 py-2 bg-indigo-650 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition shadow active:scale-95 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Save className="h-3.5 w-3.5" /> {savingMatrix ? 'Menyimpan...' : 'Simpan Matriks'}
+            </button>
+          </div>
+
+          <div className="space-y-4 overflow-y-auto max-h-[500px] pr-1">
+            {loading ? (
+              <div className="py-24 text-center text-xs font-semibold text-slate-400">Loading parameter matrix from cloud...</div>
+            ) : (
+              <div className="space-y-4">
+                {SYSTEM_MODULES.map((mod, idx) => {
+                  const IconComponent = mod.icon;
+                  return (
+                    <div key={mod.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      
+                      {/* Left: module descriptive info */}
+                      <div className="flex items-start gap-3 max-w-sm">
+                        <div className="p-2.5 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-600 shrink-0 mt-0.5">
+                          <IconComponent className="h-4.5 w-4.5" />
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-[11.5px] font-black text-slate-900 leading-tight uppercase tracking-tight">{mod.name}</p>
+                          <p className="text-[10px] text-slate-450 leading-relaxed font-semibold">{mod.desc}</p>
+                          <span className="text-[8.5px] font-mono text-slate-400 font-bold uppercase tracking-wider">Modul ID: {mod.id}</span>
+                        </div>
+                      </div>
+
+                      {/* Right: checklist buttons representing each Plan */}
+                      <div className="flex flex-wrap gap-1.5 shrink-0">
+                        {["Trial", "Basic", "Premium", "Enterprise"].map(planName => {
+                          const isEnabled = (tieringMatrix[planName] || []).includes(mod.id);
+                          const planColor = 
+                            planName === 'Enterprise' ? 'border-amber-250 hover:bg-amber-50 text-amber-700 font-bold' :
+                            planName === 'Premium' ? 'border-indigo-250 hover:bg-indigo-50 text-indigo-700 font-bold' :
+                            planName === 'Basic' ? 'border-blue-250 hover:bg-blue-50 text-blue-700 font-bold' :
+                            'border-slate-205 hover:bg-slate-100 text-slate-600 font-bold';
+
+                          return (
+                            <button
+                              key={planName}
+                              type="button"
+                              onClick={() => handleTogglePlanModule(planName as any, mod.id)}
+                              className={`px-3 py-1.5 border text-[9.5px] uppercase tracking-wider rounded-lg transition active:scale-95 cursor-pointer flex items-center gap-1 ${
+                                isEnabled 
+                                  ? `${planName === 'Enterprise' ? 'bg-amber-500 text-white border-amber-500' : planName === 'Premium' ? 'bg-indigo-650 text-white border-indigo-650' : planName === 'Basic' ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-700 text-white border-slate-700'}`
+                                  : `${planColor} bg-white opacity-40 hover:opacity-100`
+                              }`}
+                              title={`Toggle ${mod.name} for ${planName}`}
+                            >
+                              {isEnabled ? '✓' : '✗'} {planName}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl text-[10px] leading-relaxed font-sans font-bold text-blue-800 flex items-start gap-2">
+            <Info className="h-4.5 w-4.5 shrink-0 text-blue-600" />
+            <div>
+              <p className="font-extrabold uppercase mb-0.5">Catatan Perubahan Model</p>
+              <span>Setiap kali Anda mengubah hak akses standardisasi di atas, seluruh tenant yang terdaftar pada plan tersebut akan terpengaruh SECARA DINAMIS pada penyegaran sistem berikutnya. Bila tenant memiliki modul custom override yang sudah disimpan, pengaturan custom override tersebut yang akan diprioritaskan.</span>
+            </div>
+          </div>
+
+        </div>
+
+        {/* TAB COLUMN 2: INDIVIDUAL TENANT CUSTOM ADD-ONS & OVERRIDES (Lg: 5 cols) */}
+        <div className="lg:col-span-5 bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm flex flex-col justify-between space-y-4">
+          <div className="space-y-3">
+            <div className="border-b border-slate-50 pb-3">
+              <span className="text-[9px] font-black text-indigo-600 uppercase tracking-widest block">Metode Custom Override</span>
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Building2 className="h-4.5 w-4.5 text-[#001bb5]" /> Modul Tambahan Kustom per Penyewa
+              </h3>
+            </div>
+
+            {/* Keyword tenant search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Cari koperasi penyewa..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 text-xs font-semibold rounded-xl border border-slate-150 focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-800 placeholder-slate-400"
+              />
+            </div>
+
+            {/* Tenant Selection List */}
+            <div className="overflow-y-auto max-h-[200px] border border-slate-100 rounded-2xl p-2 bg-slate-50/50 space-y-1">
+              {filteredTenants.length === 0 ? (
+                <p className="text-center text-xs font-bold text-slate-400 py-6">Koperasi penyewa tidak ditemukan.</p>
+              ) : (
+                filteredTenants.map(t => {
+                  const isCurSelected = selectedTenant?.id === t.id;
+                  const overridingCount = t.customFeatures ? t.customFeatures.length : 0;
+                  const planBadgeColor = 
+                    t.plan === 'Enterprise' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                    t.plan === 'Premium' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
+                    t.plan === 'Basic' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                    'bg-slate-50 text-slate-600 border-slate-100';
+
+                  return (
+                    <div
+                      key={t.id}
+                      onClick={() => setSelectedTenant(t)}
+                      className={`p-2.5 rounded-xl cursor-pointer transition border text-left flex items-center justify-between gap-3 ${
+                        isCurSelected 
+                          ? 'bg-indigo-100/50 border-indigo-600'
+                          : 'bg-white hover:bg-slate-50 border-slate-100'
+                      }`}
+                    >
+                      <div className="space-y-0.5 truncate pr-2">
+                        <p className="text-xs font-black text-slate-800 leading-none truncate">{t.name}</p>
+                        <p className="text-[9.5px] text-slate-450 truncate font-semibold block leading-none">ID: <span className="uppercase font-mono font-bold">{t.id}</span> &middot; {t.ownerEmail}</p>
+                      </div>
+                      
+                      <div className="flex items-center gap-1.5 shrink-0 text-right">
+                        <span className={`px-2 py-0.5 text-[8.5px] uppercase font-black tracking-wider border rounded-md whitespace-nowrap ${planBadgeColor}`}>
+                          {t.plan}
+                        </span>
+                        {t.customFeatures ? (
+                          <span className="px-1.5 py-0.5 bg-rose-50 border border-rose-100 text-rose-700 text-[8.5px] font-black rounded-sm whitespace-nowrap" title="Has custom permission overrides">
+                            MODK ({overridingCount})
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-[8.5px] font-bold rounded-sm whitespace-nowrap">
+                            Default
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Detailed Inspector & Switcher for Selected Tenant Overrides */}
+          {selectedTenant ? (
+            <div className="border border-indigo-100 bg-indigo-50/25 p-4 rounded-2xl text-left space-y-3.5 flex-1 flex flex-col justify-between max-h-[350px]">
+              <div className="border-b border-indigo-100/60 pb-2.5 flex items-start justify-between gap-3 shrink-0">
+                <div className="space-y-0.5 max-w-xs">
+                  <p className="text-[9px] font-black text-indigo-700 uppercase tracking-widest leading-none">Workspace Terpilih</p>
+                  <p className="text-xs font-black text-slate-850 truncate leading-snug uppercase mt-1">{selectedTenant.name}</p>
+                  <p className="text-[9.5px] text-slate-450 leading-none font-semibold">Taraf Paket: <span className="font-bold text-indigo-600 uppercase font-mono">{selectedTenant.plan}</span></p>
+                </div>
+                {selectedTenant.customFeatures && (
+                  <button
+                    type="button"
+                    onClick={() => handleClearTenantOverrides(selectedTenant.id)}
+                    className="text-[9.5px] font-black text-rose-700 hover:text-rose-900 uppercase tracking-wider transition hover:underline"
+                    title="Reset to default plan features"
+                  >
+                    Clear Override
+                  </button>
+                )}
+              </div>
+
+              {/* Toggle controls checklist */}
+              <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+                {SYSTEM_MODULES.map(mod => {
+                  const Icon = mod.icon;
+                  // If overridden, check from selection overrides, otherwise falls back to Plan standard
+                  const currentList = selectedTenant.customFeatures || tieringMatrix[selectedTenant.plan] || PLAN_DEFAULT_FEATURES[selectedTenant.plan] || [];
+                  const isChecked = currentList.includes(mod.id);
+                  const isDirectOverride = selectedTenant.customFeatures?.includes(mod.id);
+
+                  return (
+                    <div
+                      key={mod.id}
+                      onClick={() => handleToggleTenantOverride(selectedTenant.id, mod.id)}
+                      className={`p-2 rounded-xl transition border cursor-pointer flex items-center justify-between gap-3 ${
+                        isChecked 
+                          ? 'bg-white border-indigo-3 w-full shadow-xs' 
+                          : 'bg-white/40 border-slate-100 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 max-w-[80%]">
+                        <div className={`p-1.5 rounded-lg shrink-0 ${isChecked ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-400'}`}>
+                          <Icon className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="space-y-0.5 truncate text-left">
+                          <p className="text-[10.5px] font-black text-slate-850 leading-none truncate">{mod.name}</p>
+                          <p className="text-[8.5px] text-slate-400 font-medium truncate leading-none">{mod.desc}</p>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 flex items-center gap-1 text-right">
+                        {isDirectOverride && (
+                          <span className="text-[7.5px] uppercase font-black text-rose-700 bg-rose-50 border border-rose-100 px-1 rounded-sm leading-none py-0.5">Add-On</span>
+                        )}
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}} // Swifts handled by parent container click
+                          className="h-3.5 w-3.5 text-indigo-650 border-slate-300 rounded-sm focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Integrity certification footnote */}
+              <div className="pt-2 border-t border-indigo-100/60 leading-tight text-[9px] font-bold text-slate-450 italic">
+                💡 Fitur custom (Add-on) didata secara real-time pada cloud dan diproritaskan saat otorisasi login client.
+              </div>
+            </div>
+          ) : (
+            <div className="border border-dashed border-slate-150 p-12 rounded-2xl bg-slate-50/50 text-center space-y-1.5 flex-1 flex flex-col justify-center items-center">
+              <Sparkles className="h-8 w-8 text-indigo-300 animate-bounce" />
+              <p className="text-xs font-bold text-slate-455">Belum ada Koperasi Terpilih</p>
+              <p className="text-[9.5px] text-slate-400 max-w-xs font-semibold leading-relaxed">
+                Pilih Koperasi penyewa dari daftar pencarian di atas untuk menyisipkan modul kustom khusus (add-on) bypass fitur paket standardisasi.
+              </p>
+            </div>
+          )}
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+};
