@@ -247,21 +247,48 @@ export default function App() {
     }
   }, [koperasiId]);
 
+  useEffect(() => {
+    if (!koperasiId) return;
+    
+    // Load existing scoped data or fall back to system defaults
+    // This provides instant UI transition before Cloud snapshot arrives
+    const savedName = localStorage.getItem(`kdmp_${koperasiId}_koperasiName`);
+    const savedAlamat = localStorage.getItem(`kdmp_${koperasiId}_koperasiAlamat`);
+    const savedLogo = localStorage.getItem(`kdmp_${koperasiId}_koperasiLogo`);
+    const savedSize = localStorage.getItem(`kdmp_${koperasiId}_koperasiInvoiceSize`);
+    const savedSubtext = localStorage.getItem(`kdmp_${koperasiId}_koperasiSubtext`);
+
+    setKoperasiName(savedName || "Supercloud Integrated Financial System");
+    setKoperasiAlamat(savedAlamat || "Sistem Informasi Akuntansi & Operasional Komprehensif");
+    setKoperasiLogo(savedLogo || "");
+    setKoperasiInvoiceSize(savedSize || "A4");
+    setKoperasiSubtext(savedSubtext || "Powered by Supercloud Network");
+
+    // Important: Also reset the ref to avoid immediate writeback of stale data
+    lastKoperasiMetaRef.current = {
+      nama: savedName || "",
+      alamat: savedAlamat || "",
+      logo: savedLogo || "",
+      invoiceSize: savedSize || "A4",
+      subtext: savedSubtext || ""
+    };
+  }, [koperasiId]);
+
   // Dynamic Koperasi Profile Details & Print configuration
   const [koperasiName, setKoperasiName] = useState<string>(
-    () => localStorage.getItem('kdmp_koperasiName') || "Supercloud Integrated Financial System"
+    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiName`) || localStorage.getItem('kdmp_koperasiName') || "Supercloud Integrated Financial System"
   );
   const [koperasiAlamat, setKoperasiAlamat] = useState<string>(
-    () => localStorage.getItem('kdmp_koperasiAlamat') || "Sistem Informasi Akuntansi & Operasional Komprehensif"
+    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiAlamat`) || localStorage.getItem('kdmp_koperasiAlamat') || "Sistem Informasi Akuntansi & Operasional Komprehensif"
   );
   const [koperasiLogo, setKoperasiLogo] = useState<string>(
-    () => localStorage.getItem('kdmp_koperasiLogo') || ""
+    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiLogo`) || localStorage.getItem('kdmp_koperasiLogo') || ""
   );
   const [koperasiInvoiceSize, setKoperasiInvoiceSize] = useState<string>(
-    () => localStorage.getItem('kdmp_koperasiInvoiceSize') || "A4"
+    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiInvoiceSize`) || localStorage.getItem('kdmp_koperasiInvoiceSize') || "A4"
   );
   const [koperasiSubtext, setKoperasiSubtext] = useState<string>(
-    () => localStorage.getItem('kdmp_koperasiSubtext') || "Powered by Supercloud Network"
+    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiSubtext`) || localStorage.getItem('kdmp_koperasiSubtext') || "Powered by Supercloud Network"
   );
 
   // User accounts with roles and permissions
@@ -724,6 +751,13 @@ export default function App() {
          setKoperasiLogo(meta.logo);
          if (meta.invoiceSize) setKoperasiInvoiceSize(meta.invoiceSize);
          if (meta.subtext) setKoperasiSubtext(meta.subtext);
+      } else {
+         // Reset to defaults if tenant doesn't exist in cloud
+         setKoperasiName("Supercloud Integrated Financial System");
+         setKoperasiAlamat("Sistem Informasi Akuntansi & Operasional Komprehensif");
+         setKoperasiLogo("");
+         setKoperasiInvoiceSize("A4");
+         setKoperasiSubtext("Powered by Supercloud Network");
       }
       setCloudStatus(prev => ({ ...prev, meta: true }));
     }, (err) => {
@@ -1208,24 +1242,29 @@ export default function App() {
   }, [currentUsername]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_koperasiName', koperasiName);
-  }, [koperasiName]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_koperasiName`, koperasiName);
+  }, [koperasiName, koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_koperasiAlamat', koperasiAlamat);
-  }, [koperasiAlamat]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_koperasiAlamat`, koperasiAlamat);
+  }, [koperasiAlamat, koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_koperasiLogo', koperasiLogo);
-  }, [koperasiLogo]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_koperasiLogo`, koperasiLogo);
+  }, [koperasiLogo, koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_koperasiInvoiceSize', koperasiInvoiceSize);
-  }, [koperasiInvoiceSize]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_koperasiInvoiceSize`, koperasiInvoiceSize);
+  }, [koperasiInvoiceSize, koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_koperasiSubtext', koperasiSubtext);
-  }, [koperasiSubtext]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_koperasiSubtext`, koperasiSubtext);
+  }, [koperasiSubtext, koperasiId]);
 
   // LOGIN OPERATION
   const handleLogin = async (e: React.FormEvent) => {
@@ -1717,6 +1756,16 @@ export default function App() {
     setUserName("");
     setUserRole("");
     setCurrentUsername("");
+    
+    // SECURITY: Clear input fields to protect user privacy (no credentials left behind)
+    setInputUser("");
+    setInputPass("");
+    setCloudEmail("");
+    setCloudPassword("");
+    setCloudConfirmPassword("");
+    setLoginError("");
+    setCloudSuccessMessage("");
+
     localStorage.removeItem('kdmp_accessMode');
     localStorage.removeItem('kdmp_userName');
     localStorage.removeItem('kdmp_userRole');
@@ -3153,6 +3202,141 @@ export default function App() {
     }
   };
 
+  // CORE DASHBOARD RENDER LAYER
+  const publicVerifyPortal = showPublicVerifyPortal && (
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
+      <div className="bg-white rounded-[2rem] border border-slate-100 shadow-2xl max-w-lg w-full overflow-hidden flex flex-col justify-between animate-in zoom-in-95 duration-200 text-left">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-slate-50">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 bg-red-500 rounded-xl flex items-center justify-center text-white">
+              <QrCode className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">Verifikator Keaslian ID Card</h2>
+              <p className="text-[10px] text-slate-500 font-mono">Layanan Verifikasi Publik (QR-ID Ledger)</p>
+            </div>
+          </div>
+          <button 
+            type="button" 
+            onClick={() => {
+              setShowPublicVerifyPortal(false);
+              setPublicVerifyId("");
+              setPublicVerifyResult(null);
+              setPublicVerifyError("");
+            }}
+            className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-full transition cursor-pointer"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+          
+          {/* Info Tip */}
+          <div className="p-3 bg-emerald-50 text-emerald-800 text-[11px] rounded-xl font-medium border border-emerald-100 leading-normal flex items-start gap-2.5">
+            <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+            <p>
+              ID Card Terverifikasi Sistem. Data ini ditarik langsung dari database digital utama instansi {koperasiName}.
+            </p>
+          </div>
+
+          {/* VERIFICATION REPORT PANEL */}
+          {(publicVerifyResult || publicVerifyError) ? (
+            <div className="space-y-3.5 animate-in fade-in slide-in-from-top-3 duration-300">
+              {publicVerifyError && (
+                <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center shrink-0 border border-rose-300">
+                    <ShieldAlert className="h-5 w-5 text-rose-600 animate-bounce" />
+                  </div>
+                  <div className="text-left space-y-1 text-rose-950">
+                    <p className="text-xs font-black uppercase tracking-tight">ID Tidak Valid</p>
+                    <p className="text-[11px] leading-relaxed text-rose-700 font-medium">
+                      {publicVerifyError}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {publicVerifyResult && (
+                <div className={`p-5 rounded-3xl border shadow-sm ${
+                  publicVerifyResult.isDatabaseMismatch 
+                    ? 'bg-amber-50 border-amber-200/60 text-amber-950' 
+                    : 'bg-slate-50 border-slate-200/60 text-slate-950'
+                } relative overflow-hidden flex flex-col items-center text-center gap-4`}>
+                  
+                  {/* Verification Seal Icon */}
+                  <div className="shrink-0">
+                    <div className={`w-20 h-20 rounded-full flex items-center justify-center border-4 border-white shadow-xl ${
+                      publicVerifyResult.isDatabaseMismatch ? 'bg-amber-100 text-amber-600' : 'bg-emerald-500 text-white'
+                    }`}>
+                      <CheckCircle2 className="h-10 w-10" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex flex-col items-center gap-1">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        publicVerifyResult.isDatabaseMismatch 
+                          ? 'bg-amber-100 text-amber-800' 
+                          : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {publicVerifyResult.isDatabaseMismatch ? '✓ DATA BERBEDA' : '✓ ID TERVERIFIKASI ASLI'}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono font-medium">SERIAL: {publicVerifyResult.id}</span>
+                    </div>
+
+                    <div className="pt-2">
+                      <h5 className="text-xl font-black text-slate-900 uppercase tracking-tight">{publicVerifyResult.nama}</h5>
+                      <p className="text-xs text-red-650 font-black uppercase tracking-widest mt-1">{publicVerifyResult.jabatanAtauPerusahaan || "Staff"}</p>
+                    </div>
+
+                    <div className="bg-white/60 backdrop-blur-sm p-4 rounded-2xl border border-white space-y-2 mt-4 text-[11px] font-bold text-slate-600">
+                       <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                          <span className="text-slate-400 font-medium font-mono uppercase tracking-tighter">Status</span>
+                          <span className={publicVerifyResult.status === "Aktif" ? "text-emerald-600" : "text-rose-600"}>
+                             {publicVerifyResult.status === "Aktif" ? "AKTIF & RESMI" : "NON-AKTIF"}
+                          </span>
+                       </div>
+                       <div className="flex justify-between items-center pt-1">
+                          <span className="text-slate-400 font-medium font-mono uppercase tracking-tighter">Instansi</span>
+                          <span className="text-slate-900 truncate max-w-[150px]">{koperasiName}</span>
+                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+             <div className="py-12 text-center space-y-4">
+                <RefreshCw className="h-10 w-10 text-slate-200 animate-spin mx-auto" />
+                <p className="text-xs font-bold text-slate-400">Sedang memproses data autentikasi...</p>
+             </div>
+          )}
+        </div>
+
+        {/* Modal Footer */}
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-center shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setShowPublicVerifyPortal(false);
+              setPublicVerifyId("");
+              setPublicVerifyResult(null);
+              setPublicVerifyError("");
+              // Clear search params to reset URL
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }}
+            className="w-full py-4 bg-slate-900 hover:bg-black text-white font-black text-xs uppercase tracking-widest rounded-2xl transition duration-200 cursor-pointer shadow-xl shadow-slate-200"
+          >
+            Tutup & Selesai
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // RENDER SECURITY LAYER
   if (accessMode === "login") {
     // STEP 1: CONNECT TO CLOUD TENANT (COOPERATIVE ID SETUP)
@@ -3387,8 +3571,10 @@ export default function App() {
       };
 
       return (
-        <div 
-          id="koperasi-setup-screen" 
+        <>
+          {publicVerifyPortal}
+          <div 
+            id="koperasi-setup-screen" 
           className="min-h-screen w-full bg-slate-50 flex items-center justify-center p-6 relative overflow-hidden font-sans"
         >
           {/* AMBIENT BACKGROUND DECO */}
@@ -3756,13 +3942,16 @@ export default function App() {
             </div>
           </div>
         </div>
-      );
-    }
+      </>
+    );
+  }
 
     // STEP 2: USER ACCOUNT SIGN-IN UNDER REGISTERED TENANT
     return (
-      <div 
-        id="login-page-screen" 
+      <>
+        {publicVerifyPortal}
+        <div 
+          id="login-page-screen" 
         className="min-h-screen w-full bg-slate-50 flex items-center justify-center p-6 relative overflow-hidden font-sans"
       >
         <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-100/50 rounded-full blur-3xl opacity-50" />
@@ -4014,8 +4203,9 @@ export default function App() {
           </div>
         </div>
       </div>
-    );
-  }
+    </>
+  );
+}
 
   // Find user's permission to access settings
   const currentUserDetail = userAccounts.find(u => u.username === currentUsername);
@@ -4573,262 +4763,8 @@ export default function App() {
       </main>
 
       {/* PUBLIC ID-CARD & QR AUTHENTICITY VERIFIER DIALOG CONTAINER */}
-      {showPublicVerifyPortal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-2xl max-w-lg w-full overflow-hidden flex flex-col justify-between animate-in zoom-in-95 duration-200 text-left">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-slate-50">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 bg-red-500 rounded-xl flex items-center justify-center text-white">
-                  <QrCode className="h-5 w-5" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">Verifikator Keaslian ID Card</h2>
-                  <p className="text-[10px] text-slate-500 font-mono">Layanan Verifikasi Publik Terenkripsi (QR-ID Ledger)</p>
-                </div>
-              </div>
-              <button 
-                type="button" 
-                onClick={() => {
-                  setShowPublicVerifyPortal(false);
-                  setPublicVerifyId("");
-                  setPublicVerifyResult(null);
-                  setPublicVerifyError("");
-                }}
-                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-full transition cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-              
-              {/* Info Tip */}
-              <div className="p-3 bg-red-50 text-red-00 text-[11px] rounded-xl font-medium border border-red-100/50 leading-normal flex items-start gap-2.5">
-                <ShieldCheck className="h-4 w-4 text-red-650 shrink-0 mt-0.5" />
-                <p className="text-red-800">
-                  Sistem verifikasi mandiri ini membandingkan data ID-Card fisik pengurus dengan database digital utama secara langsung demi menghalau segala bentuk klaim transaksi koperasi ilegal dan pemalsuan ID.
-                </p>
-              </div>
-
-              {/* Selector Tabs: Input Manual & Simulator */}
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => setIsSimulatingScan(false)}
-                    className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition cursor-pointer ${!isSimulatingScan ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-                  >
-                    Input manual ID
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsSimulatingScan(true);
-                      setPublicVerifyError("");
-                    }}
-                    className={`py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition cursor-pointer ${isSimulatingScan ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-                  >
-                    Simulasi scan qr
-                  </button>
-                </div>
-
-                {!isSimulatingScan ? (
-                  /* MANUAL ENTRY MODE */
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 tracking-wider uppercase ml-1">Serial ID Staff (CON-xxxxxx)</label>
-                      <div className="flex gap-2">
-                        <div className="relative flex-1 group">
-                          <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-red-500 transition-colors h-4 w-4" />
-                          <input
-                            type="text"
-                            placeholder="Contoh: CON-39201"
-                            value={publicVerifyId}
-                            onChange={(e) => setPublicVerifyId(e.target.value.toUpperCase())}
-                            className="w-full pl-11 pr-4 py-3 bg-slate-50 border-2 border-transparent rounded-xl focus:outline-none focus:border-red-500 focus:bg-white text-sm font-bold placeholder-slate-400 text-slate-900 uppercase"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPublicVerifyError("");
-                            setPublicVerifyResult(null);
-                            const matched = kontakLainData.find(c => c.id.toLowerCase() === publicVerifyId.trim().toLowerCase());
-                            if (matched) {
-                              setPublicVerifyResult({
-                                ...matched,
-                                isLiveVerified: true
-                              });
-                            } else {
-                              setPublicVerifyError("Peringatan: Serial ID tidak ditemukan dalam data base resmi!");
-                            }
-                          }}
-                          className="px-5 py-3 bg-red-600 hover:bg-red-700 text-white text-[11px] font-black uppercase tracking-wider rounded-xl cursor-pointer active:scale-95 transition whitespace-nowrap animate-pulse"
-                        >
-                          Kirim Verifikasi
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  /* SIMULATOR QR CAMERA MODE */
-                  <div className="space-y-4">
-                    <div className="relative h-44 bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 flex flex-col items-center justify-center p-4">
-                      {/* Interactive scrolling laser scanning bar */}
-                      <div className="absolute inset-x-0 h-0.5 bg-emerald-500 shadow-[0_0_12px_#10b981] animate-[bounce_2.5s_infinite_ease-in-out]" />
-                      
-                      {/* Virtual Scanner brackets */}
-                      <div className="absolute top-4 left-4 w-5 h-5 border-t-2 border-l-2 border-red-500" />
-                      <div className="absolute top-4 right-4 w-5 h-5 border-t-2 border-r-2 border-red-500" />
-                      <div className="absolute bottom-4 left-4 w-5 h-5 border-b-2 border-l-2 border-red-500" />
-                      <div className="absolute bottom-4 right-4 w-5 h-5 border-b-2 border-r-2 border-red-500" />
-
-                      <div className="text-center z-10 space-y-1.5">
-                        <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-1 animate-pulse">
-                          <QrCode className="h-5 w-5 text-red-500" />
-                        </div>
-                        <p className="text-[10px] text-white/80 font-mono uppercase tracking-wider font-bold">Simulator Scanner Digital Live</p>
-                        <p className="text-[9px] text-slate-400">Pilih data staff di bawah untuk melakukan uji pindaian QR ID Card:</p>
-                      </div>
-                    </div>
-
-                    {/* Quick Selection Dropdown of registered employees to verify */}
-                    <div className="space-y-1.5 text-left">
-                      <label className="text-[10px] font-black text-slate-400 tracking-wider uppercase ml-1">Pilih Staff Untuk Simulasi Scan</label>
-                      <select
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (!val) return;
-                          setPublicVerifyError("");
-                          setPublicVerifyId(val);
-                          const matched = kontakLainData.find(c => c.id === val);
-                          if (matched) {
-                            setPublicVerifyResult({
-                              ...matched,
-                              isLiveVerified: true
-                            });
-                          }
-                        }}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
-                      >
-                        <option value="">-- Pilih Staff --</option>
-                        {kontakLainData.filter(c => c.tipe === "Karyawan").map(c => (
-                          <option key={c.id} value={c.id}>
-                            {c.nama} ({c.jabatanAtauPerusahaan || "Staf"}) - ID: {c.id}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* VERIFICATION REPORT PANEL */}
-              {(publicVerifyResult || publicVerifyError) && (
-                <div className="border-t border-slate-100 pt-5 space-y-3.5 animate-in fade-in slide-in-from-top-3 duration-300">
-                  <h4 className="text-[10px] font-black text-slate-400 tracking-widest uppercase ml-1">Hasil Audit Autentikasi Koperasi</h4>
-
-                  {publicVerifyError && (
-                    <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center shrink-0 border border-rose-300">
-                        <ShieldAlert className="h-5 w-5 text-rose-600 animate-bounce" />
-                      </div>
-                      <div className="text-left space-y-1 text-rose-950">
-                        <p className="text-xs font-black uppercase tracking-tight">Kliping ID Palsu / Tidak Dikenal</p>
-                        <p className="text-[11px] leading-relaxed text-rose-700 font-medium">
-                          {publicVerifyError}
-                          <br/><br/>
-                          <span className="font-bold underline">PERINGATAN HUKUM:</span> Hindari memberikan dana, menyetorkan tabungan, atau menyerahkan dokumen konfidensial kepada pihak yang tidak lolos verifikasi QR-ID resmi ini. Segera adukan indikasi ke agen keamanan setempat.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {publicVerifyResult && (
-                    <div className={`p-5 rounded-2xl border ${
-                      publicVerifyResult.isDatabaseMismatch 
-                        ? 'bg-amber-50 border-amber-200/60 text-amber-950' 
-                        : 'bg-emerald-50 border-emerald-200/60 text-emerald-950'
-                    } relative overflow-hidden flex flex-col sm:flex-row gap-4 items-center`}>
-                      
-                      {/* Verification Seal Icon and status */}
-                      <div className="text-center shrink-0">
-                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border-4 border-white shadow-md mx-auto ${
-                          publicVerifyResult.isDatabaseMismatch ? 'bg-amber-100 text-amber-600' : 'bg-emerald-500 text-white'
-                        }`}>
-                          <ShieldCheck className="h-8 w-8" />
-                        </div>
-                      </div>
-
-                      <div className="text-left flex-1 space-y-1.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                            publicVerifyResult.isDatabaseMismatch 
-                              ? 'bg-amber-100 text-amber-800' 
-                              : 'bg-emerald-150 text-emerald-800 font-sans'
-                          }`}>
-                            {publicVerifyResult.isDatabaseMismatch ? '✓ Mismatch Terdeteksi' : '✓ Terverifikasi Asli'}
-                          </span>
-                          <span className="text-[9px] text-slate-400 font-mono font-medium">Ref: {publicVerifyResult.id}</span>
-                        </div>
-
-                        <div>
-                          <h5 className="text-sm font-black text-slate-900 uppercase tracking-tight">{publicVerifyResult.nama}</h5>
-                          <p className="text-[11px] text-red-650 font-bold leading-none mt-0.5">{publicVerifyResult.jabatanAtauPerusahaan || "Pejabat Koperasi"}</p>
-                        </div>
-
-                        <div className="text-[10px] space-y-1 text-slate-500 font-medium font-mono pt-1">
-                          <p>
-                            <span className="text-slate-400">Instansi:</span> {koperasiName || "Financial System"}
-                          </p>
-                          <p>
-                            <span className="text-slate-400">Status Database:</span> {
-                              publicVerifyResult.status === "Aktif" 
-                                ? "🟢 AKTIF & BERWENANG" 
-                                : "🔴 NON-AKTIF / DITANGGUHKAN"
-                            }
-                          </p>
-                          <p>
-                            <span className="text-slate-400">Metode Validasi:</span> {
-                              publicVerifyResult.isDecodedFromQR 
-                                ? "QR Decryption Protocol" 
-                                : "Live Cloud Synchronized Ledger Query (100% Valid)"
-                            }
-                          </p>
-                        </div>
-
-                        {publicVerifyResult.isDatabaseMismatch && (
-                          <p className="text-[9px] text-amber-700 bg-amber-100/40 p-2 rounded-lg leading-relaxed mt-2.5 font-bold">
-                            ⚠️ PEMBERITAHUAN: Profil berhasil didekode dari tanda tangan QR, namun ID pengurus saat ini tidak aktif atau dihapus dari sistem administrasi database inti kami. Mintalah pengurus memperbarui keanggotaan.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPublicVerifyPortal(false);
-                  setPublicVerifyId("");
-                  setPublicVerifyResult(null);
-                  setPublicVerifyError("");
-                }}
-                className="px-5 py-2 bg-slate-900 hover:bg-black text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition duration-200 cursor-pointer shadow-md shadow-slate-100"
-              >
-                Selesai Validasi
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* GLOBAL MODALS & OVERLAYS */}
+      {publicVerifyPortal}
     </div>
   );
 }
