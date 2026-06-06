@@ -90,7 +90,14 @@ function getSaldoAwal(kode: string, originalSaldo: number): number {
 
 export default function App() {
   const [koperasiId, setKoperasiId] = useState<string>(
-    () => localStorage.getItem('kdmp_koperasiId') || "supercloud"
+    () => {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const cloudParam = params.get("cloud_id") || params.get("koperasi_id") || params.get("kid") || params.get("verify_tenant");
+        if (cloudParam) return cloudParam;
+      }
+      return localStorage.getItem('kdmp_koperasiId') || "supercloud";
+    }
   );
 
   // Authentication & Access States
@@ -592,7 +599,8 @@ export default function App() {
       if (matched) {
         setPublicVerifyResult({
           ...matched,
-          isLiveVerified: true
+          isLiveVerified: true,
+          isDatabaseMismatch: false
         });
         setPublicVerifyError("");
       } else {
@@ -601,7 +609,8 @@ export default function App() {
           if (reCheck) {
             setPublicVerifyResult({
               ...reCheck,
-              isLiveVerified: true
+              isLiveVerified: true,
+              isDatabaseMismatch: false
             });
             setPublicVerifyError("");
           } else if (!verifyName) {
@@ -609,13 +618,14 @@ export default function App() {
             setPublicVerifyError("Data pengurus tidak ditemukan pada server database. Silakan pastikan ID valid.");
           } else {
             // Mismatch indicator - means data was in URL QR but not inside the actual current database
+            // We increase confidence by waiting up to 3 seconds for cloud sync
             setPublicVerifyResult(prev => prev ? { ...prev, isDatabaseMismatch: true } : null);
           }
-        }, 1000);
+        }, 3000);
         return () => clearTimeout(timeoutHandle);
       }
     }
-  }, [kontakLainData]);
+  }, [kontakLainData, koperasiId]);
 
   const [tagihanData, setTagihanData] = useState<Tagihan[]>(() => {
     const raw = localStorage.getItem('kdmp_tagihanData');
@@ -3299,10 +3309,15 @@ export default function App() {
                              {publicVerifyResult.status === "Aktif" ? "AKTIF & RESMI" : "NON-AKTIF"}
                           </span>
                        </div>
-                       <div className="flex justify-between items-center pt-1">
+                       <div className="flex justify-between items-center pt-1 border-b border-slate-100 pb-2">
                           <span className="text-slate-400 font-medium font-mono uppercase tracking-tighter">Instansi</span>
                           <span className="text-slate-900 truncate max-w-[150px]">{koperasiName}</span>
                        </div>
+                       {publicVerifyResult.isDatabaseMismatch && (
+                         <div className="pt-2 text-[10px] text-amber-700 bg-amber-50/50 p-2 rounded-xl border border-amber-100 leading-relaxed font-semibold">
+                           ⚠️ CATATAN: Data ditemukan pada fisik kartu (QR), namun belum tersinkronisasi sepenuhnya dengan basis data cloud kami saat ini. Hal ini bisa terjadi jika data baru saja didaftarkan atau akun pengurus sedang dalam status audit.
+                         </div>
+                       )}
                     </div>
                   </div>
                 </div>
