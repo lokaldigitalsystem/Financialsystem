@@ -306,7 +306,7 @@ export function Kontak(props: KontakProps) {
                 <button
                   type="button"
                   onClick={openAddModal}
-                  className="px-4 py-2 bg-red-650 hover:bg-red-750 text-white font-bold text-xs rounded-xl shadow transition flex items-center justify-center gap-1.5 cursor-pointer flex-1 md:flex-initial"
+                  className="px-4 py-2 bg-[#ee1010] hover:bg-red-750 text-white font-bold text-xs rounded-xl shadow transition flex items-center justify-center gap-1.5 cursor-pointer flex-1 md:flex-initial"
                 >
                   <UserPlus className="h-4 w-4" /> Tambah {activeSubTab === "karyawan" ? "Karyawan" : activeSubTab === "supplier" ? "Supplier" : "Pelanggan"}
                 </button>
