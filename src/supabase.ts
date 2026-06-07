@@ -150,13 +150,15 @@ export async function getDoc(docRef: DocRef): Promise<any> {
         return {
           exists: () => true,
           data: () => JSON.parse(cached),
-          id: docRef.item_id
+          id: docRef.item_id,
+          metadata: { hasPendingWrites: false }
         };
       }
       return {
         exists: () => false,
         data: () => ({}),
-        id: docRef.item_id
+        id: docRef.item_id,
+        metadata: { hasPendingWrites: false }
       };
     }
 

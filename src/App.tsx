@@ -96,7 +96,7 @@ export default function App() {
         const cloudParam = params.get("cloud_id") || params.get("koperasi_id") || params.get("kid") || params.get("verify_tenant");
         if (cloudParam) return cloudParam;
       }
-      return localStorage.getItem('kdmp_koperasiId') || "supercloud";
+      return localStorage.getItem('kdmp_koperasiId') || "";
     }
   );
 
@@ -257,6 +257,20 @@ export default function App() {
   useEffect(() => {
     if (!koperasiId) return;
     
+    // Reset cloud sync loaded states during tenant transition to halt bulk writebacks
+    setCloudStatus({
+      users: false,
+      coa: false,
+      jurnal: false,
+      stok: false,
+      anggota: false,
+      kontak: false,
+      tagihan: false,
+      rekening: false,
+      assets: false,
+      meta: false
+    });
+
     // Load existing scoped data or fall back to system defaults
     // This provides instant UI transition before Cloud snapshot arrives
     const savedName = localStorage.getItem(`kdmp_${koperasiId}_koperasiName`);
@@ -265,20 +279,27 @@ export default function App() {
     const savedSize = localStorage.getItem(`kdmp_${koperasiId}_koperasiInvoiceSize`);
     const savedSubtext = localStorage.getItem(`kdmp_${koperasiId}_koperasiSubtext`);
 
-    setKoperasiName(savedName || "Supercloud Integrated Financial System");
-    setKoperasiAlamat(savedAlamat || "Sistem Informasi Akuntansi & Operasional Komprehensif");
-    setKoperasiLogo(savedLogo || "");
-    setKoperasiInvoiceSize(savedSize || "A4");
-    setKoperasiSubtext(savedSubtext || "Powered by Supercloud Network");
+    const finalName = savedName || "Supercloud Integrated Financial System";
+    const finalAlamat = savedAlamat || "Sistem Informasi Akuntansi & Operasional Komprehensif";
+    const finalLogo = savedLogo || "";
+    const finalSize = savedSize || "A4";
+    const finalSubtext = savedSubtext || "Powered by Supercloud Network";
+
+    setKoperasiName(finalName);
+    setKoperasiAlamat(finalAlamat);
+    setKoperasiLogo(finalLogo);
+    setKoperasiInvoiceSize(finalSize);
+    setKoperasiSubtext(finalSubtext);
 
     // Important: Also reset the ref to avoid immediate writeback of stale data
     lastKoperasiMetaRef.current = {
-      nama: savedName || "",
-      alamat: savedAlamat || "",
-      logo: savedLogo || "",
-      invoiceSize: savedSize || "A4",
-      subtext: savedSubtext || ""
+      nama: finalName,
+      alamat: finalAlamat,
+      logo: finalLogo,
+      invoiceSize: finalSize,
+      subtext: finalSubtext
     };
+    isMetaReadyRef.current = false;
   }, [koperasiId]);
 
   // Dynamic Koperasi Profile Details & Print configuration
@@ -288,6 +309,10 @@ export default function App() {
   const [koperasiAlamat, setKoperasiAlamat] = useState<string>(
     () => localStorage.getItem(`kdmp_${koperasiId}_koperasiAlamat`) || localStorage.getItem('kdmp_koperasiAlamat') || "Sistem Informasi Akuntansi & Operasional Komprehensif"
   );
+  
+  // Inactivity tracking
+  const [lastActivity, setLastActivity] = useState<number>(Date.now());
+  const TIMEOUT_DURATION = 30 * 60 * 1000; // 30 minutes
   const [koperasiLogo, setKoperasiLogo] = useState<string>(
     () => localStorage.getItem(`kdmp_${koperasiId}_koperasiLogo`) || localStorage.getItem('kdmp_koperasiLogo') || ""
   );
@@ -726,6 +751,78 @@ export default function App() {
   });
 
   const lastKoperasiMetaRef = React.useRef({ nama: "", alamat: "", logo: "", invoiceSize: "", subtext: "" });
+  const isMetaReadyRef = React.useRef(false);
+
+  const handleLogout = () => {
+    if (isSupportMode) {
+      handleExitSupportMode();
+      return;
+    }
+
+    // Log the logout action BEFORE resetting local states
+    if (currentUsername) {
+      logSecurityEvent({
+        tenantId: koperasiId,
+        tenantName: koperasiName,
+        actorEmail: `${currentUsername}@koperasi.net`,
+        actorName: userName || currentUsername,
+        category: "Autentikasi",
+        severity: "INFO",
+        action: "Keluar Sistem",
+        details: `Petugas ${userName || currentUsername} telah keluar secara aman dari sistem portal ${koperasiName}.`,
+        status: "Sukses"
+      }).catch(err => console.warn(err));
+    }
+
+    setAccessMode("login");
+    setUserName("");
+    setUserRole("");
+    setCurrentUsername("");
+    
+    // SECURITY: Clear input fields to protect user privacy (no credentials left behind)
+    setInputUser("");
+    setInputPass("");
+    setCloudEmail("");
+    setCloudPassword("");
+    setCloudConfirmPassword("");
+    setLoginError("");
+    setCloudSuccessMessage("");
+
+    localStorage.removeItem('kdmp_accessMode');
+    localStorage.removeItem('kdmp_userName');
+    localStorage.removeItem('kdmp_userRole');
+    localStorage.removeItem('kdmp_currentUsername');
+    localStorage.removeItem('kdmp_userAccounts');
+    auth.signOut();
+    setInputUser("");
+    setInputPass("");
+    setCloudEmail("");
+    setCloudPassword("");
+    setCloudConfirmPassword("");
+    setRegPassword("");
+    setRegConfirmPassword("");
+    setInputKoperasiId("");
+    setRegKoperasiName("");
+    setRegKoperasiAlamat("");
+    setRegSuperITEmail("");
+    setOwnerPIN("");
+    setLoginError("");
+    setKoperasiError("");
+    setCloudSuccessMessage("");
+    setActivePage("dashboard");
+    setShowStealthBypassConnect(false);
+  };
+
+  const handleDisconnectKoperasi = () => {
+    if (isSupportMode) {
+      handleExitSupportMode();
+      return;
+    }
+    handleLogout();
+    setKoperasiId("");
+    localStorage.removeItem('kdmp_koperasiId');
+  };
+
   const lastUserAccountsRef = React.useRef<UserAccount[]>([]);
   const lastCoaRef = React.useRef<CoaAccount[]>([]);
   const lastJurnalRef = React.useRef<JurnalEntry[]>([]);
@@ -744,7 +841,7 @@ export default function App() {
     // 1. Cooperative Document Meta
     const unsubMeta = onSnapshot(doc(db, "koperasi", koperasiId), (snap) => {
       // Skip updates if it's our own local change to avoid "flickering" state
-      if (snap.metadata.hasPendingWrites) return;
+      if (snap.metadata?.hasPendingWrites) return;
 
       if (snap.exists()) {
          const data = snap.data();
@@ -778,7 +875,7 @@ export default function App() {
     // 2. Users
     const unsubUsers = onSnapshot(collection(db, "koperasi", koperasiId, "users"), (snap) => {
       // Skip if we have pending local writes to avoid jitter/reverts
-      if (snap.metadata.hasPendingWrites) return;
+      if (snap.metadata?.hasPendingWrites) return;
 
       const list: UserAccount[] = [];
       snap.forEach(d => list.push(d.data() as UserAccount));
@@ -810,7 +907,7 @@ export default function App() {
 
     // 3. COA
     const unsubCoa = onSnapshot(collection(db, "koperasi", koperasiId, "coa"), (snap) => {
-      if (snap.metadata.hasPendingWrites) return;
+      if (snap.metadata?.hasPendingWrites) return;
       const list: CoaAccount[] = [];
       snap.forEach(d => list.push(d.data() as CoaAccount));
       
@@ -829,7 +926,7 @@ export default function App() {
 
     // 4. Jurnal
     const unsubJurnal = onSnapshot(collection(db, "koperasi", koperasiId, "jurnal"), (snap) => {
-      if (snap.metadata.hasPendingWrites) return;
+      if (snap.metadata?.hasPendingWrites) return;
       const list: JurnalEntry[] = [];
       snap.forEach(d => list.push(d.data() as JurnalEntry));
       
@@ -850,7 +947,7 @@ export default function App() {
 
     // 5. Stok
     const unsubStok = onSnapshot(collection(db, "koperasi", koperasiId, "stok"), (snap) => {
-      if (snap.metadata.hasPendingWrites) return;
+      if (snap.metadata?.hasPendingWrites) return;
       const list: StokItem[] = [];
       snap.forEach(d => list.push(d.data() as StokItem));
       
@@ -869,7 +966,7 @@ export default function App() {
 
     // 6. Stok Histori
     const unsubStokHistori = onSnapshot(collection(db, "koperasi", koperasiId, "stokHistori"), (snap) => {
-      if (snap.metadata.hasPendingWrites) return;
+      if (snap.metadata?.hasPendingWrites) return;
       const list: StokHistoriEntry[] = [];
       snap.forEach(d => list.push(d.data() as StokHistoriEntry));
       lastStokHistoriRef.current = list;
@@ -878,7 +975,7 @@ export default function App() {
 
     // 7. Anggota
     const unsubAnggota = onSnapshot(collection(db, "koperasi", koperasiId, "anggota"), (snap) => {
-      if (snap.metadata.hasPendingWrites) return;
+      if (snap.metadata?.hasPendingWrites) return;
       const list: Anggota[] = [];
       snap.forEach(d => list.push(d.data() as Anggota));
       lastAnggotaRef.current = list;
@@ -891,7 +988,7 @@ export default function App() {
 
     // 8. Kontak Lain
     const unsubKontak = onSnapshot(collection(db, "koperasi", koperasiId, "kontakLain"), (snap) => {
-      if (snap.metadata.hasPendingWrites) return;
+      if (snap.metadata?.hasPendingWrites) return;
       const list: KontakLain[] = [];
       snap.forEach(d => list.push(d.data() as KontakLain));
       lastKontakRef.current = list;
@@ -904,7 +1001,7 @@ export default function App() {
 
     // 9. Tagihan
     const unsubTagihan = onSnapshot(collection(db, "koperasi", koperasiId, "tagihan"), (snap) => {
-      if (snap.metadata.hasPendingWrites) return;
+      if (snap.metadata?.hasPendingWrites) return;
       const list: Tagihan[] = [];
       snap.forEach(d => list.push(d.data() as Tagihan));
       lastTagihanRef.current = list;
@@ -917,7 +1014,7 @@ export default function App() {
 
     // 10. Rekening Bank
     const unsubRekening = onSnapshot(collection(db, "koperasi", koperasiId, "rekening"), (snap) => {
-      if (snap.metadata.hasPendingWrites) return;
+      if (snap.metadata?.hasPendingWrites) return;
       const list: RekeningBank[] = [];
       snap.forEach(d => list.push(d.data() as RekeningBank));
       lastRekeningRef.current = list;
@@ -930,7 +1027,7 @@ export default function App() {
 
     // 11. Fixed Assets
     const unsubAssets = onSnapshot(collection(db, "koperasi", koperasiId, "fixedAssets"), (snap) => {
-      if (snap.metadata.hasPendingWrites) return;
+      if (snap.metadata?.hasPendingWrites) return;
       const list: FixedAsset[] = [];
       snap.forEach(d => list.push(d.data() as FixedAsset));
       lastFixedAssetsRef.current = list;
@@ -960,7 +1057,7 @@ export default function App() {
 
   // Meta Document
   useEffect(() => {
-    if (!koperasiId || !cloudStatus.meta) return;
+    if (!koperasiId || !cloudStatus.meta || accessMode === "login") return;
     const meta = {
       nama: koperasiName,
       alamat: koperasiAlamat,
@@ -968,7 +1065,19 @@ export default function App() {
       invoiceSize: koperasiInvoiceSize,
       subtext: koperasiSubtext
     };
-    if (JSON.stringify(meta) !== JSON.stringify(lastKoperasiMetaRef.current)) {
+
+    const hasMetaCaughtUp = 
+      koperasiName === lastKoperasiMetaRef.current.nama &&
+      koperasiAlamat === lastKoperasiMetaRef.current.alamat &&
+      koperasiLogo === lastKoperasiMetaRef.current.logo &&
+      koperasiInvoiceSize === lastKoperasiMetaRef.current.invoiceSize &&
+      koperasiSubtext === lastKoperasiMetaRef.current.subtext;
+
+    if (hasMetaCaughtUp) {
+      isMetaReadyRef.current = true;
+    }
+
+    if (isMetaReadyRef.current && JSON.stringify(meta) !== JSON.stringify(lastKoperasiMetaRef.current)) {
       setDoc(doc(db, "koperasi", koperasiId), {
         id: koperasiId,
         nama: koperasiName,
@@ -979,11 +1088,11 @@ export default function App() {
       }, { merge: true }).catch(err => handleCloudError(err, OperationType.WRITE, `koperasi/${koperasiId}`));
       lastKoperasiMetaRef.current = meta;
     }
-  }, [koperasiName, koperasiAlamat, koperasiLogo, koperasiInvoiceSize, koperasiSubtext, koperasiId, cloudStatus.meta]);
+  }, [koperasiName, koperasiAlamat, koperasiLogo, koperasiInvoiceSize, koperasiSubtext, koperasiId, cloudStatus.meta, accessMode]);
 
   // Users Accounts
   useEffect(() => {
-    if (!koperasiId || !cloudStatus.users) return;
+    if (!koperasiId || !cloudStatus.users || accessMode === "login") return;
     const local = userAccounts;
     const dbVal = lastUserAccountsRef.current;
     
@@ -1011,11 +1120,11 @@ export default function App() {
       }
     });
     lastUserAccountsRef.current = local;
-  }, [userAccounts, koperasiId, cloudStatus.users]);
+  }, [userAccounts, koperasiId, cloudStatus.users, accessMode]);
 
   // COA Accounts
   useEffect(() => {
-    if (!koperasiId || !cloudStatus.coa) return;
+    if (!koperasiId || !cloudStatus.coa || accessMode === "login") return;
     const local = coaData;
     const dbVal = lastCoaRef.current;
     local.forEach(item => {
@@ -1032,11 +1141,11 @@ export default function App() {
       }
     });
     lastCoaRef.current = local;
-  }, [coaData, koperasiId, cloudStatus.coa]);
+  }, [coaData, koperasiId, cloudStatus.coa, accessMode]);
 
   // Jurnal Entries
   useEffect(() => {
-    if (!koperasiId || !cloudStatus.jurnal) return;
+    if (!koperasiId || !cloudStatus.jurnal || accessMode === "login") return;
     const local = jurnalData;
     const dbVal = lastJurnalRef.current;
     local.forEach(item => {
@@ -1053,11 +1162,11 @@ export default function App() {
       }
     });
     lastJurnalRef.current = local;
-  }, [jurnalData, koperasiId, cloudStatus.jurnal]);
+  }, [jurnalData, koperasiId, cloudStatus.jurnal, accessMode]);
 
   // Stok Items
   useEffect(() => {
-    if (!koperasiId || !cloudStatus.stok) return;
+    if (!koperasiId || !cloudStatus.stok || accessMode === "login") return;
     const local = stokData;
     const dbVal = lastStokRef.current;
     local.forEach(item => {
@@ -1074,11 +1183,11 @@ export default function App() {
       }
     });
     lastStokRef.current = local;
-  }, [stokData, koperasiId, cloudStatus.stok]);
+  }, [stokData, koperasiId, cloudStatus.stok, accessMode]);
 
   // Stok Histori
   useEffect(() => {
-    if (!koperasiId) return; // No guard needed for histori usually as it is mostly append only, but consistency is good
+    if (!koperasiId || accessMode === "login") return; // No guard needed for histori usually as it is mostly append only, but consistency is good
     const local = stokHistoriData;
     const dbVal = lastStokHistoriRef.current;
     local.forEach(item => {
@@ -1095,11 +1204,11 @@ export default function App() {
       }
     });
     lastStokHistoriRef.current = local;
-  }, [stokHistoriData, koperasiId]);
+  }, [stokHistoriData, koperasiId, accessMode]);
 
   // Anggota
   useEffect(() => {
-    if (!koperasiId || !cloudStatus.anggota) return;
+    if (!koperasiId || !cloudStatus.anggota || accessMode === "login") return;
     const local = anggotaData;
     const dbVal = lastAnggotaRef.current;
     local.forEach(item => {
@@ -1116,11 +1225,11 @@ export default function App() {
       }
     });
     lastAnggotaRef.current = local;
-  }, [anggotaData, koperasiId, cloudStatus.anggota]);
+  }, [anggotaData, koperasiId, cloudStatus.anggota, accessMode]);
 
   // Kontak Lain
   useEffect(() => {
-    if (!koperasiId || !cloudStatus.kontak) return;
+    if (!koperasiId || !cloudStatus.kontak || accessMode === "login") return;
     const local = kontakLainData;
     const dbVal = lastKontakRef.current;
     local.forEach(item => {
@@ -1137,11 +1246,11 @@ export default function App() {
       }
     });
     lastKontakRef.current = local;
-  }, [kontakLainData, koperasiId, cloudStatus.kontak]);
+  }, [kontakLainData, koperasiId, cloudStatus.kontak, accessMode]);
 
   // Tagihan
   useEffect(() => {
-    if (!koperasiId || !cloudStatus.tagihan) return;
+    if (!koperasiId || !cloudStatus.tagihan || accessMode === "login") return;
     const local = tagihanData;
     const dbVal = lastTagihanRef.current;
     local.forEach(item => {
@@ -1158,11 +1267,11 @@ export default function App() {
       }
     });
     lastTagihanRef.current = local;
-  }, [tagihanData, koperasiId, cloudStatus.tagihan]);
+  }, [tagihanData, koperasiId, cloudStatus.tagihan, accessMode]);
 
   // Rekening Bank
   useEffect(() => {
-    if (!koperasiId || !cloudStatus.rekening) return;
+    if (!koperasiId || !cloudStatus.rekening || accessMode === "login") return;
     const local = rekeningData;
     const dbVal = lastRekeningRef.current;
     local.forEach(item => {
@@ -1179,11 +1288,11 @@ export default function App() {
       }
     });
     lastRekeningRef.current = local;
-  }, [rekeningData, koperasiId, cloudStatus.rekening]);
+  }, [rekeningData, koperasiId, cloudStatus.rekening, accessMode]);
 
   // Fixed Assets
   useEffect(() => {
-    if (!koperasiId || !cloudStatus.assets) return;
+    if (!koperasiId || !cloudStatus.assets || accessMode === "login") return;
     const local = fixedAssets;
     const dbVal = lastFixedAssetsRef.current;
     local.forEach(item => {
@@ -1200,7 +1309,41 @@ export default function App() {
       }
     });
     lastFixedAssetsRef.current = local;
-  }, [fixedAssets, koperasiId, cloudStatus.assets]);
+  }, [fixedAssets, koperasiId, cloudStatus.assets, accessMode]);
+
+  // AUTO-LOGOUT ON INACTIVITY
+  useEffect(() => {
+    // Only track if logged in
+    if (accessMode === "login") return;
+
+    const updateActivity = () => {
+      setLastActivity(Date.now());
+    };
+
+    // Listen for common user interactions
+    window.addEventListener("mousedown", updateActivity, { passive: true });
+    window.addEventListener("keydown", updateActivity, { passive: true });
+    window.addEventListener("scroll", updateActivity, { passive: true });
+    window.addEventListener("touchstart", updateActivity, { passive: true });
+    window.addEventListener("mousemove", updateActivity, { passive: true });
+
+    const checkInterval = setInterval(() => {
+      const now = Date.now();
+      if (now - lastActivity > TIMEOUT_DURATION) {
+        console.log("Auto-logout triggered due to 30 minutes of inactivity.");
+        handleDisconnectKoperasi();
+      }
+    }, 60000); // Check every minute
+
+    return () => {
+      window.removeEventListener("mousedown", updateActivity);
+      window.removeEventListener("keydown", updateActivity);
+      window.removeEventListener("scroll", updateActivity);
+      window.removeEventListener("touchstart", updateActivity);
+      window.removeEventListener("mousemove", updateActivity);
+      clearInterval(checkInterval);
+    };
+  }, [accessMode, lastActivity]);
 
   // Optimistic save fallbacks for offline support
   useEffect(() => {
@@ -1739,76 +1882,6 @@ export default function App() {
     } finally {
       setCloudAuthLoading(false);
     }
-  };
-
-  const handleLogout = () => {
-    if (isSupportMode) {
-      handleExitSupportMode();
-      return;
-    }
-
-    // Log the logout action BEFORE resetting local states
-    if (currentUsername) {
-      logSecurityEvent({
-        tenantId: koperasiId,
-        tenantName: koperasiName,
-        actorEmail: `${currentUsername}@koperasi.net`,
-        actorName: userName || currentUsername,
-        category: "Autentikasi",
-        severity: "INFO",
-        action: "Keluar Sistem",
-        details: `Petugas ${userName || currentUsername} telah keluar secara aman dari sistem portal ${koperasiName}.`,
-        status: "Sukses"
-      }).catch(err => console.warn(err));
-    }
-
-    setAccessMode("login");
-    setUserName("");
-    setUserRole("");
-    setCurrentUsername("");
-    
-    // SECURITY: Clear input fields to protect user privacy (no credentials left behind)
-    setInputUser("");
-    setInputPass("");
-    setCloudEmail("");
-    setCloudPassword("");
-    setCloudConfirmPassword("");
-    setLoginError("");
-    setCloudSuccessMessage("");
-
-    localStorage.removeItem('kdmp_accessMode');
-    localStorage.removeItem('kdmp_userName');
-    localStorage.removeItem('kdmp_userRole');
-    localStorage.removeItem('kdmp_currentUsername');
-    localStorage.removeItem('kdmp_userAccounts');
-    auth.signOut();
-    setInputUser("");
-    setInputPass("");
-    setCloudEmail("");
-    setCloudPassword("");
-    setCloudConfirmPassword("");
-    setRegPassword("");
-    setRegConfirmPassword("");
-    setInputKoperasiId("");
-    setRegKoperasiName("");
-    setRegKoperasiAlamat("");
-    setRegSuperITEmail("");
-    setOwnerPIN("");
-    setLoginError("");
-    setKoperasiError("");
-    setCloudSuccessMessage("");
-    setActivePage("dashboard");
-    setShowStealthBypassConnect(false);
-  };
-
-  const handleDisconnectKoperasi = () => {
-    if (isSupportMode) {
-      handleExitSupportMode();
-      return;
-    }
-    handleLogout();
-    setKoperasiId("");
-    localStorage.removeItem('kdmp_koperasiId');
   };
 
   const handleImpersonate = (targetId: string) => {
@@ -3422,8 +3495,32 @@ export default function App() {
             const data = snap.data();
             setKoperasiId(cleanId);
             localStorage.setItem('kdmp_koperasiId', cleanId);
-            if (data.nama) setKoperasiName(data.nama);
-            if (data.alamat) setKoperasiAlamat(data.alamat);
+            
+            const loadedNama = data.nama || "Supercloud Integrated Financial System";
+            const loadedAlamat = data.alamat || "Sistem Informasi Akuntansi & Operasional Komprehensif";
+            const loadedLogo = data.logo || "";
+            const loadedSize = data.invoiceSize || "A4";
+            const loadedSubtext = data.subtext || "Powered by Supercloud Network";
+
+            setKoperasiName(loadedNama);
+            setKoperasiAlamat(loadedAlamat);
+            setKoperasiLogo(loadedLogo);
+            setKoperasiInvoiceSize(loadedSize);
+            setKoperasiSubtext(loadedSubtext);
+
+            localStorage.setItem(`kdmp_${cleanId}_koperasiName`, loadedNama);
+            localStorage.setItem(`kdmp_${cleanId}_koperasiAlamat`, loadedAlamat);
+            localStorage.setItem(`kdmp_${cleanId}_koperasiLogo`, loadedLogo);
+            localStorage.setItem(`kdmp_${cleanId}_koperasiInvoiceSize`, loadedSize);
+            localStorage.setItem(`kdmp_${cleanId}_koperasiSubtext`, loadedSubtext);
+
+            lastKoperasiMetaRef.current = {
+              nama: loadedNama,
+              alamat: loadedAlamat,
+              logo: loadedLogo,
+              invoiceSize: loadedSize,
+              subtext: loadedSubtext
+            };
           } else {
             setKoperasiError("Organisasi/Instansi dengan ID ini belum terdaftar. Silakan aktifkan pendaftaran baru!");
           }
@@ -4353,7 +4450,7 @@ export default function App() {
         <div className="md:hidden flex items-center justify-between p-4 border-b border-white/10">
            <div className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-red-500" />
-              <span className="font-black text-xs uppercase tracking-widest">{isSidebarCollapsed ? "KDMP" : "KDMP System"}</span>
+              <span className="font-black text-xs uppercase tracking-widest">{isSidebarCollapsed ? "FS" : "FINANCIAL SYSTEM"}</span>
            </div>
            <div className="flex items-center gap-3">
               <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} className="p-2 bg-white/5 rounded-lg text-slate-400">
@@ -4389,7 +4486,7 @@ export default function App() {
             {!isSidebarCollapsed && (
               <button
                 id="app-logout-btn"
-                onClick={handleLogout}
+                onClick={handleDisconnectKoperasi}
                 title="Keluar dari Sistem"
                 className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-all duration-200"
               >
@@ -4767,7 +4864,7 @@ export default function App() {
                 Silakan hubungi tim IT Support atau Finance kami untuk panduan lebih lanjut.
               </p>
               <button 
-                onClick={handleLogout}
+                onClick={handleDisconnectKoperasi}
                 className="w-full py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-2xl transition shadow-xl"
               >
                 Tutup System
