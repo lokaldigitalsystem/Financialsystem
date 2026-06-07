@@ -112,6 +112,26 @@ export class QueryRef {
 
 export const db = { type: 'supabase_db' };
 
+/**
+ * RELATIONAL MIGRATION SERVICE (PREVIEW)
+ * This identifies how the flat JSON data maps to a future high-integrity relational structure.
+ * Do NOT use directly for writing yet, this serves as the blueprint for the next phase.
+ */
+export const RelationalSchema = {
+  anggota: {
+    table: 'mst_anggota',
+    fields: ['id', 'koperasi_id', 'nama', 'no_hp', 'tgl_gabung', 'limit_kredit']
+  },
+  stok: {
+    table: 'mst_stok',
+    fields: ['id', 'koperasi_id', 'nama', 'barcode', 'qty', 'harga_modal', 'harga_jual', 'min_stok']
+  },
+  penjualan: {
+    table: 'trx_penjualan',
+    fields: ['id', 'koperasi_id', 'tgl', 'pelanggan_id', 'subtotal', 'diskon', 'total_bersih']
+  }
+};
+
 export function doc(database: any, ...paths: string[]) {
   return new DocRef(paths.join('/'));
 }

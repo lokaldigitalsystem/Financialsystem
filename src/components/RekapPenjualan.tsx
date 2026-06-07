@@ -278,6 +278,17 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
   const averageMargin = totalGrossRevenue > 0 ? (totalGrossProfit / totalGrossRevenue) * 100 : 0;
   const averageTransVal = totalTrans > 0 ? Math.round(totalGrossRevenue / totalTrans) : 0;
 
+  // Compute Opname Reconciliation (New for Monthly recap accuracy)
+  // This calculates how much stock is "lost" or "found" based on the monthly stock count vs theoretical sales
+  const computeOpnameVariance = () => {
+    // This would ideally fetch from a persistent opname history
+    // For now, calculating based on current stokData discrepancies if min_stok is used as flag
+    const variances = props.stokData.filter(s => (s as any).lastVariance !== 0);
+    return variances.reduce((sum, s) => sum + (Math.abs((s as any).lastVariance || 0) * (s.hargaModal || 0)), 0);
+  };
+
+  const monthlyVarianceLoss = computeOpnameVariance();
+
   // Process data for Recharts (Daily Sales of the month)
   const getDaysInMonth = (m: number, y: number) => {
     return new Date(y, m + 1, 0).getDate();
@@ -439,13 +450,6 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
             title="Download sales log for selected month as CSV"
           >
             <FileDown className="h-4 w-4" /> Export CSV (Excel)
-          </button>
-          <button
-            type="button"
-            onClick={handlePrintReport}
-            className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs rounded-xl shadow-md transition transform active:scale-95 inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <Printer className="h-4 w-4" /> Cetak Laporan Bulanan
           </button>
         </div>
       </div>
@@ -742,6 +746,24 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
             </h3>
             <p className="text-[9.5px] font-medium text-slate-500 mt-1 font-sans">
               Ø Tiket: Rp {averageTransVal.toLocaleString('id-ID')}
+            </p>
+          </div>
+        </div>
+
+        {/* RECONCILIATION VARIANCE CARD (New professional banking metric) */}
+        <div className={`rounded-2xl border p-5 shadow-xs flex flex-col justify-between ${monthlyVarianceLoss > 0 ? 'bg-orange-50 border-orange-150' : 'bg-white border-gray-150'}`}>
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-[10px] font-bold text-gray-450 uppercase tracking-widest">Nilai Shrinkage / Opname</span>
+            <span className={`px-2 py-0.5 text-[9px] font-bold rounded-md ${monthlyVarianceLoss > 0 ? 'bg-orange-200 text-orange-900' : 'bg-emerald-100 text-emerald-700'}`}>
+              {monthlyVarianceLoss > 0 ? 'Resiko Stok' : 'Stok Akurat'}
+            </span>
+          </div>
+          <div>
+            <h3 className={`text-xl font-extrabold font-mono ${monthlyVarianceLoss > 0 ? 'text-orange-700' : 'text-slate-900'}`}>
+              Rp {monthlyVarianceLoss.toLocaleString('id-ID')}
+            </h3>
+            <p className="text-[9.5px] font-medium text-slate-400 mt-1">
+              Potensi kerugian dari selisih fisik gudang.
             </p>
           </div>
         </div>

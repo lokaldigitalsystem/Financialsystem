@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Building2, 
   Notebook, 
@@ -34,7 +35,7 @@ import {
   CreditCard
 } from 'lucide-react';
 
-import { CoaAccount, CoaKategori, SaldoNormal, JurnalEntry, StokItem, Anggota, RekeningBank, StokHistoriEntry, Tagihan, FixedAsset, KontakLain } from './types';
+import { CoaAccount, CoaKategori, SaldoNormal, JurnalEntry, StokItem, Anggota, RekeningBank, StokHistoriEntry, Tagihan, FixedAsset, KontakLain, SecurityAuditEvent } from './types';
 import { INITIAL_COA, INITIAL_JURNAL, INITIAL_STOK, INITIAL_ANGGOTA, INITIAL_REKENING, INITIAL_STOK_HISTORI, INITIAL_KONTAK_LAIN } from './data/initialData';
 
 // Component imports
@@ -116,6 +117,49 @@ export default function App() {
   const [cloudAuthLoading, setCloudAuthLoading] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
   const [cloudSuccessMessage, setCloudSuccessMessage] = useState("");
+  const [securityAlert, setSecurityAlert] = useState<SecurityAuditEvent | null>(null);
+  const [unreadSupportCount, setUnreadSupportCount] = useState(0);
+
+  // Real-time Critical Security Notification Listener
+  useEffect(() => {
+    // Only listen for critical events if the user is logged in as SuperIT/Owner
+    const isOwner = auth.currentUser?.email === 'komarudink403@gmail.com' || currentUsername === 'SuperIT';
+    
+    if (accessMode !== "login" && isOwner) {
+      const colRef = collection(db, "security_audit_trail");
+      
+      const unsubscribe = onSnapshot(colRef, (snapshot) => {
+        const now = new Date().getTime();
+        const docs = snapshot.docs || [];
+        
+        // Find most recent critical event in the last 10 seconds
+        const criticalEvent = docs
+          .map((d: any) => d.data())
+          .filter((data: any) => data.severity === "CRITICAL")
+          .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+
+        if (criticalEvent) {
+          const eventTime = new Date(criticalEvent.timestamp).getTime();
+          const isRecent = (now - eventTime) < 10000; // Trigger only if it happened in the last 10s
+          
+          // Avoid duplicate alerts or alerts from self actions (optional, but good for UX)
+          // For now, let's show all critical events to ensure visibility
+          if (isRecent) {
+            setSecurityAlert(criticalEvent);
+            
+            // Auto-clear after 15 seconds
+            const timer = setTimeout(() => {
+              setSecurityAlert(null);
+            }, 15000);
+            
+            return () => clearTimeout(timer);
+          }
+        }
+      });
+
+      return () => unsubscribe();
+    }
+  }, [accessMode, currentUsername]);
 
   // Connection inputs/registration states
   const [inputKoperasiId, setInputKoperasiId] = useState("");
@@ -140,12 +184,13 @@ export default function App() {
   const [tenantStatus, setTenantStatus] = useState<"Active" | "Trial" | "Suspended" | null>(null);
   const [tenantPlan, setTenantPlan] = useState<"Trial" | "Basic" | "Premium" | "Enterprise">("Trial");
   const [tenantFeatures, setTenantFeatures] = useState<string[] | null>(null);
-  const [globalConfig, setGlobalConfig] = useState<{
-    maintenanceMode: boolean,
-    announcement: string,
-    isAnnouncementActive: boolean,
-    announcementType: string
-  } | null>(null);
+  const [globalConfig, setGlobalConfig] = useState({
+    maintenanceMode: false,
+    announcement: "",
+    isAnnouncementActive: false,
+    announcementType: "info",
+    rootPIN: "231108"
+  });
 
   // Layout & Theme States
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(
@@ -181,12 +226,15 @@ export default function App() {
         // 1. OWNER BYPASS (HIGHEST PRIORITY)
         if (email === "komarudink403@gmail.com") {
           setAccessMode("admin");
-          setUserName("Bpk. Komarudin (SuperIT Owner)");
+          const storedName = localStorage.getItem('kdmp_userName');
+          const finalName = (storedName && storedName !== "Bpk. Komarudin (SuperIT Owner)") ? storedName : "Bpk. Komarudin (SuperIT Owner)";
+          
+          setUserName(finalName);
           setUserRole("Pemilik & Pembuat System");
           setCurrentUsername("SuperIT");
           
           localStorage.setItem('kdmp_accessMode', "admin");
-          localStorage.setItem('kdmp_userName', "Bpk. Komarudin (SuperIT Owner)");
+          localStorage.setItem('kdmp_userName', finalName);
           localStorage.setItem('kdmp_userRole', "Pemilik & Pembuat System");
           localStorage.setItem('kdmp_currentUsername', "SuperIT");
         } else {
@@ -220,14 +268,33 @@ export default function App() {
     return () => unsub();
   }, [accessMode, cloudAuthLoading, koperasiId]);
 
+  const lastLocalConfigUpdate = useRef<number>(0);
+
   // LISTEN TO GLOBAL CONFIG
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "system_config", "global"), (snap) => {
-      if (snap.exists()) {
-        setGlobalConfig(snap.data() as any);
+      // Debounce: If we just updated locally, wait 3 seconds before accepting cloud updates
+      // This prevents the "flicker" where cloud (false) overwrites local (true) before propagation
+      if (Date.now() - lastLocalConfigUpdate.current < 3000) {
+        console.log("Skipping global config snapshot due to recent local update");
+        return;
       }
+
+      // Ensure we always have a clean copy of data
+      const data = snap.exists() ? snap.data() : {};
+      
+      setGlobalConfig(prev => {
+        // Only update if there's an actual change in maintenanceMode to avoid flicker
+        const nextMode = data.maintenanceMode !== undefined ? !!data.maintenanceMode : prev.maintenanceMode;
+        
+        return {
+          ...prev,
+          ...data,
+          maintenanceMode: !!nextMode // Force boolean
+        };
+      });
     }, (err) => {
-      console.warn("Global config listener error (likely non-existent doc):", err.message);
+      console.warn("Global config listener warning:", err.message);
     });
     return () => unsub();
   }, []);
@@ -271,6 +338,34 @@ export default function App() {
       meta: false
     });
 
+    // Reset business data states to prevent leakage between tenants before cloud sync
+    const savedCoa = localStorage.getItem(`kdmp_${koperasiId}_coaData`);
+    setCoaData(savedCoa ? JSON.parse(savedCoa) : INITIAL_COA.map(c => ({ ...c, saldo: 0, saldoAwal: 0 })));
+    
+    const savedJurnal = localStorage.getItem(`kdmp_${koperasiId}_jurnalData`);
+    setJurnalData(savedJurnal ? JSON.parse(savedJurnal) : []);
+    
+    const savedStok = localStorage.getItem(`kdmp_${koperasiId}_stokData`);
+    setStokData(savedStok ? JSON.parse(savedStok) : []);
+    
+    const savedStokHistori = localStorage.getItem(`kdmp_${koperasiId}_stokHistoriData`);
+    setStokHistoriData(savedStokHistori ? JSON.parse(savedStokHistori) : []);
+    
+    const savedAnggota = localStorage.getItem(`kdmp_${koperasiId}_anggotaData`);
+    setAnggotaData(savedAnggota ? JSON.parse(savedAnggota) : []);
+    
+    const savedKontak = localStorage.getItem(`kdmp_${koperasiId}_kontakLainData`);
+    setKontakLainData(savedKontak ? JSON.parse(savedKontak) : []);
+    
+    const savedTagihan = localStorage.getItem(`kdmp_${koperasiId}_tagihanData`);
+    setTagihanData(savedTagihan ? JSON.parse(savedTagihan) : []);
+    
+    const savedRekening = localStorage.getItem(`kdmp_${koperasiId}_rekeningData`);
+    setRekeningData(savedRekening ? JSON.parse(savedRekening) : INITIAL_REKENING.map(r => ({ ...r, saldo: 0 })));
+    
+    const savedAssets = localStorage.getItem(`kdmp_${koperasiId}_fixedAssets`);
+    setFixedAssets(savedAssets ? JSON.parse(savedAssets) : []);
+
     // Load existing scoped data or fall back to system defaults
     // This provides instant UI transition before Cloud snapshot arrives
     const savedName = localStorage.getItem(`kdmp_${koperasiId}_koperasiName`);
@@ -279,11 +374,11 @@ export default function App() {
     const savedSize = localStorage.getItem(`kdmp_${koperasiId}_koperasiInvoiceSize`);
     const savedSubtext = localStorage.getItem(`kdmp_${koperasiId}_koperasiSubtext`);
 
-    const finalName = savedName || "Supercloud Integrated Financial System";
+    const finalName = savedName || "FINANCIAL SYSTEM";
     const finalAlamat = savedAlamat || "Sistem Informasi Akuntansi & Operasional Komprehensif";
     const finalLogo = savedLogo || "";
     const finalSize = savedSize || "A4";
-    const finalSubtext = savedSubtext || "Powered by Supercloud Network";
+    const finalSubtext = savedSubtext || "Professional Enterprise Resource Planning";
 
     setKoperasiName(finalName);
     setKoperasiAlamat(finalAlamat);
@@ -299,20 +394,15 @@ export default function App() {
       invoiceSize: finalSize,
       subtext: finalSubtext
     };
-    isMetaReadyRef.current = false;
   }, [koperasiId]);
 
   // Dynamic Koperasi Profile Details & Print configuration
   const [koperasiName, setKoperasiName] = useState<string>(
-    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiName`) || localStorage.getItem('kdmp_koperasiName') || "Supercloud Integrated Financial System"
+    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiName`) || localStorage.getItem('kdmp_koperasiName') || "FINANCIAL SYSTEM"
   );
   const [koperasiAlamat, setKoperasiAlamat] = useState<string>(
     () => localStorage.getItem(`kdmp_${koperasiId}_koperasiAlamat`) || localStorage.getItem('kdmp_koperasiAlamat') || "Sistem Informasi Akuntansi & Operasional Komprehensif"
   );
-  
-  // Inactivity tracking
-  const [lastActivity, setLastActivity] = useState<number>(Date.now());
-  const TIMEOUT_DURATION = 30 * 60 * 1000; // 30 minutes
   const [koperasiLogo, setKoperasiLogo] = useState<string>(
     () => localStorage.getItem(`kdmp_${koperasiId}_koperasiLogo`) || localStorage.getItem('kdmp_koperasiLogo') || ""
   );
@@ -320,7 +410,7 @@ export default function App() {
     () => localStorage.getItem(`kdmp_${koperasiId}_koperasiInvoiceSize`) || localStorage.getItem('kdmp_koperasiInvoiceSize') || "A4"
   );
   const [koperasiSubtext, setKoperasiSubtext] = useState<string>(
-    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiSubtext`) || localStorage.getItem('kdmp_koperasiSubtext') || "Powered by Supercloud Network"
+    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiSubtext`) || localStorage.getItem('kdmp_koperasiSubtext') || "Professional Enterprise Resource Planning"
   );
 
   // User accounts with roles and permissions
@@ -398,6 +488,32 @@ export default function App() {
     });
   });
 
+  // Automatically close and reset Override Master Sistem states when user is not at the login screen
+  useEffect(() => {
+    if (accessMode !== "login") {
+      setShowStealthBypassConnect(false);
+      setShowStealthBypassLogin(false);
+      setOwnerPIN("");
+    }
+  }, [accessMode]);
+
+  // Sync user state with userAccounts list
+  useEffect(() => {
+    if (accessMode !== "login" && currentUsername && userAccounts.length > 0) {
+      const activeUser = userAccounts.find(u => u.username === currentUsername);
+      if (activeUser) {
+        if (activeUser.name !== userName) {
+          setUserName(activeUser.name);
+          localStorage.setItem('kdmp_userName', activeUser.name);
+        }
+        if (activeUser.role !== userRole) {
+          setUserRole(activeUser.role);
+          localStorage.setItem('kdmp_userRole', activeUser.role);
+        }
+      }
+    }
+  }, [userAccounts, currentUsername, accessMode, userName, userRole]);
+
   // CHECK GLOBAL SUPER ADMIN STATUS
   useEffect(() => {
     let unsub: (() => void) | undefined;
@@ -421,6 +537,27 @@ export default function App() {
     }
     return () => { if (unsub) unsub(); };
   }, [currentUser, currentUsername]);
+
+  // Support Unread Count Listener
+  useEffect(() => {
+    if (accessMode !== "login") {
+      const colRef = collection(db, "support_tickets");
+      const unsubscribe = onSnapshot(colRef, (snap) => {
+        let count = 0;
+        snap.forEach((d: any) => {
+          const data = d.data();
+          if (isGlobalAdmin) {
+            if (data.unreadAdmin) count++;
+          } else {
+            // For cooperative admin, count unread messages for their own tenant
+            if (data.tenantId === koperasiId && data.unreadClient) count++;
+          }
+        });
+        setUnreadSupportCount(count);
+      }, (err) => console.warn("Support listener error:", err));
+      return () => unsubscribe();
+    }
+  }, [accessMode, isGlobalAdmin, koperasiId]);
 
   const [activePage, setActivePage] = useState<string>("dashboard");
 
@@ -531,65 +668,48 @@ export default function App() {
 
   // Core application lists stored in states (persisted via localStorage)
   const [coaData, setCoaData] = useState<CoaAccount[]>(() => {
-    const raw = localStorage.getItem('kdmp_coaData');
+    const raw = koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_coaData`) : localStorage.getItem('kdmp_coaData');
     if (!raw) {
       return INITIAL_COA.map(c => ({
         ...c,
-        saldoAwal: getSaldoAwal(c.kode, c.saldo)
+        saldo: 0,
+        saldoAwal: 0
       }));
     }
     try {
       const stored = JSON.parse(raw) as CoaAccount[];
-      // Sync names of existing accounts to the new list and add any newly introduced COA accounts
-      const updated = stored.map(s => {
-        const corresponding = INITIAL_COA.find(i => i.kode === s.kode);
-        if (corresponding && !s.kode.startsWith('1-110')) {
-          return { 
-            ...s, 
-            nama: corresponding.nama,
-            saldoAwal: s.saldoAwal !== undefined ? s.saldoAwal : getSaldoAwal(s.kode, s.saldo)
-          };
-        }
-        return {
-          ...s,
-          saldoAwal: s.saldoAwal !== undefined ? s.saldoAwal : getSaldoAwal(s.kode, s.saldo)
-        };
-      });
-      const missing = INITIAL_COA.filter(i => !updated.some(u => u.kode === i.kode)).map(m => ({
-        ...m,
-        saldoAwal: getSaldoAwal(m.kode, m.saldo)
-      }));
-      return [...updated, ...missing];
+      return stored;
     } catch (e) {
       return INITIAL_COA.map(c => ({
         ...c,
-        saldoAwal: getSaldoAwal(c.kode, c.saldo)
+        saldo: 0,
+        saldoAwal: 0
       }));
     }
   });
 
   const [jurnalData, setJurnalData] = useState<JurnalEntry[]>(() => {
-    const raw = localStorage.getItem('kdmp_jurnalData');
+    const raw = koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_jurnalData`) : localStorage.getItem('kdmp_jurnalData');
     return raw ? JSON.parse(raw) : INITIAL_JURNAL;
   });
 
   const [stokData, setStokData] = useState<StokItem[]>(() => {
-    const raw = localStorage.getItem('kdmp_stokData');
+    const raw = koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_stokData`) : localStorage.getItem('kdmp_stokData');
     return raw ? JSON.parse(raw) : INITIAL_STOK;
   });
 
   const [stokHistoriData, setStokHistoriData] = useState<StokHistoriEntry[]>(() => {
-    const raw = localStorage.getItem('kdmp_stokHistoriData');
+    const raw = koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_stokHistoriData`) : localStorage.getItem('kdmp_stokHistoriData');
     return raw ? JSON.parse(raw) : INITIAL_STOK_HISTORI;
   });
 
   const [anggotaData, setAnggotaData] = useState<Anggota[]>(() => {
-    const raw = localStorage.getItem('kdmp_anggotaData');
+    const raw = koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_anggotaData`) : localStorage.getItem('kdmp_anggotaData');
     return raw ? JSON.parse(raw) : INITIAL_ANGGOTA;
   });
 
   const [kontakLainData, setKontakLainData] = useState<KontakLain[]>(() => {
-    const raw = localStorage.getItem('kdmp_kontakLainData');
+    const raw = koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_kontakLainData`) : localStorage.getItem('kdmp_kontakLainData');
     return raw ? JSON.parse(raw) : INITIAL_KONTAK_LAIN;
   });
 
@@ -653,30 +773,23 @@ export default function App() {
   }, [kontakLainData, koperasiId]);
 
   const [tagihanData, setTagihanData] = useState<Tagihan[]>(() => {
-    const raw = localStorage.getItem('kdmp_tagihanData');
+    const raw = koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_tagihanData`) : localStorage.getItem('kdmp_tagihanData');
     if (raw) return JSON.parse(raw);
     return [];
   });
 
   const [rekeningData, setRekeningData] = useState<RekeningBank[]>(() => {
-    const raw = localStorage.getItem('kdmp_rekeningData');
-    if (!raw) return INITIAL_REKENING;
+    const raw = koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_rekeningData`) : localStorage.getItem('kdmp_rekeningData');
+    if (!raw) return INITIAL_REKENING.map(r => ({ ...r, saldo: 0 }));
     try {
-      const stored = JSON.parse(raw) as RekeningBank[];
-      // Sync names and profiles of existing bank accounts to the updated list and add any newly introduced bank accounts
-      const updated = stored.map(s => {
-        // Return stored as is to preserve user edits of names and account numbers
-        return s;
-      });
-      const missing = INITIAL_REKENING.filter(i => !updated.some(u => u.id === i.id));
-      return [...updated, ...missing];
+      return JSON.parse(raw);
     } catch (e) {
-      return INITIAL_REKENING;
+      return INITIAL_REKENING.map(r => ({ ...r, saldo: 0 }));
     }
   });
 
   const [fixedAssets, setFixedAssets] = useState<FixedAsset[]>(() => {
-    const raw = localStorage.getItem('kdmp_fixedAssets');
+    const raw = koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_fixedAssets`) : localStorage.getItem('kdmp_fixedAssets');
     if (raw) {
       try {
         return JSON.parse(raw);
@@ -751,78 +864,6 @@ export default function App() {
   });
 
   const lastKoperasiMetaRef = React.useRef({ nama: "", alamat: "", logo: "", invoiceSize: "", subtext: "" });
-  const isMetaReadyRef = React.useRef(false);
-
-  const handleLogout = () => {
-    if (isSupportMode) {
-      handleExitSupportMode();
-      return;
-    }
-
-    // Log the logout action BEFORE resetting local states
-    if (currentUsername) {
-      logSecurityEvent({
-        tenantId: koperasiId,
-        tenantName: koperasiName,
-        actorEmail: `${currentUsername}@koperasi.net`,
-        actorName: userName || currentUsername,
-        category: "Autentikasi",
-        severity: "INFO",
-        action: "Keluar Sistem",
-        details: `Petugas ${userName || currentUsername} telah keluar secara aman dari sistem portal ${koperasiName}.`,
-        status: "Sukses"
-      }).catch(err => console.warn(err));
-    }
-
-    setAccessMode("login");
-    setUserName("");
-    setUserRole("");
-    setCurrentUsername("");
-    
-    // SECURITY: Clear input fields to protect user privacy (no credentials left behind)
-    setInputUser("");
-    setInputPass("");
-    setCloudEmail("");
-    setCloudPassword("");
-    setCloudConfirmPassword("");
-    setLoginError("");
-    setCloudSuccessMessage("");
-
-    localStorage.removeItem('kdmp_accessMode');
-    localStorage.removeItem('kdmp_userName');
-    localStorage.removeItem('kdmp_userRole');
-    localStorage.removeItem('kdmp_currentUsername');
-    localStorage.removeItem('kdmp_userAccounts');
-    auth.signOut();
-    setInputUser("");
-    setInputPass("");
-    setCloudEmail("");
-    setCloudPassword("");
-    setCloudConfirmPassword("");
-    setRegPassword("");
-    setRegConfirmPassword("");
-    setInputKoperasiId("");
-    setRegKoperasiName("");
-    setRegKoperasiAlamat("");
-    setRegSuperITEmail("");
-    setOwnerPIN("");
-    setLoginError("");
-    setKoperasiError("");
-    setCloudSuccessMessage("");
-    setActivePage("dashboard");
-    setShowStealthBypassConnect(false);
-  };
-
-  const handleDisconnectKoperasi = () => {
-    if (isSupportMode) {
-      handleExitSupportMode();
-      return;
-    }
-    handleLogout();
-    setKoperasiId("");
-    localStorage.removeItem('kdmp_koperasiId');
-  };
-
   const lastUserAccountsRef = React.useRef<UserAccount[]>([]);
   const lastCoaRef = React.useRef<CoaAccount[]>([]);
   const lastJurnalRef = React.useRef<JurnalEntry[]>([]);
@@ -846,25 +887,25 @@ export default function App() {
       if (snap.exists()) {
          const data = snap.data();
          const meta = {
-           nama: data.nama || "",
-           alamat: data.alamat || "",
+           nama: data.nama || "FINANCIAL SYSTEM",
+           alamat: data.alamat || "Sistem Informasi Akuntansi & Operasional Komprehensif",
            logo: data.logo || "",
            invoiceSize: data.invoiceSize || "A4",
-           subtext: data.subtext || ""
+           subtext: data.subtext || "Professional Enterprise Resource Planning"
          };
          lastKoperasiMetaRef.current = meta;
-         if (meta.nama) setKoperasiName(meta.nama);
-         if (meta.alamat) setKoperasiAlamat(meta.alamat);
+         setKoperasiName(meta.nama);
+         setKoperasiAlamat(meta.alamat);
          setKoperasiLogo(meta.logo);
-         if (meta.invoiceSize) setKoperasiInvoiceSize(meta.invoiceSize);
-         if (meta.subtext) setKoperasiSubtext(meta.subtext);
+         setKoperasiInvoiceSize(meta.invoiceSize);
+         setKoperasiSubtext(meta.subtext);
       } else {
          // Reset to defaults if tenant doesn't exist in cloud
-         setKoperasiName("Supercloud Integrated Financial System");
+         setKoperasiName("FINANCIAL SYSTEM");
          setKoperasiAlamat("Sistem Informasi Akuntansi & Operasional Komprehensif");
          setKoperasiLogo("");
          setKoperasiInvoiceSize("A4");
-         setKoperasiSubtext("Powered by Supercloud Network");
+         setKoperasiSubtext("Professional Enterprise Resource Planning");
       }
       setCloudStatus(prev => ({ ...prev, meta: true }));
     }, (err) => {
@@ -1065,19 +1106,7 @@ export default function App() {
       invoiceSize: koperasiInvoiceSize,
       subtext: koperasiSubtext
     };
-
-    const hasMetaCaughtUp = 
-      koperasiName === lastKoperasiMetaRef.current.nama &&
-      koperasiAlamat === lastKoperasiMetaRef.current.alamat &&
-      koperasiLogo === lastKoperasiMetaRef.current.logo &&
-      koperasiInvoiceSize === lastKoperasiMetaRef.current.invoiceSize &&
-      koperasiSubtext === lastKoperasiMetaRef.current.subtext;
-
-    if (hasMetaCaughtUp) {
-      isMetaReadyRef.current = true;
-    }
-
-    if (isMetaReadyRef.current && JSON.stringify(meta) !== JSON.stringify(lastKoperasiMetaRef.current)) {
+    if (JSON.stringify(meta) !== JSON.stringify(lastKoperasiMetaRef.current)) {
       setDoc(doc(db, "koperasi", koperasiId), {
         id: koperasiId,
         nama: koperasiName,
@@ -1311,80 +1340,55 @@ export default function App() {
     lastFixedAssetsRef.current = local;
   }, [fixedAssets, koperasiId, cloudStatus.assets, accessMode]);
 
-  // AUTO-LOGOUT ON INACTIVITY
-  useEffect(() => {
-    // Only track if logged in
-    if (accessMode === "login") return;
-
-    const updateActivity = () => {
-      setLastActivity(Date.now());
-    };
-
-    // Listen for common user interactions
-    window.addEventListener("mousedown", updateActivity, { passive: true });
-    window.addEventListener("keydown", updateActivity, { passive: true });
-    window.addEventListener("scroll", updateActivity, { passive: true });
-    window.addEventListener("touchstart", updateActivity, { passive: true });
-    window.addEventListener("mousemove", updateActivity, { passive: true });
-
-    const checkInterval = setInterval(() => {
-      const now = Date.now();
-      if (now - lastActivity > TIMEOUT_DURATION) {
-        console.log("Auto-logout triggered due to 30 minutes of inactivity.");
-        handleDisconnectKoperasi();
-      }
-    }, 60000); // Check every minute
-
-    return () => {
-      window.removeEventListener("mousedown", updateActivity);
-      window.removeEventListener("keydown", updateActivity);
-      window.removeEventListener("scroll", updateActivity);
-      window.removeEventListener("touchstart", updateActivity);
-      window.removeEventListener("mousemove", updateActivity);
-      clearInterval(checkInterval);
-    };
-  }, [accessMode, lastActivity]);
-
   // Optimistic save fallbacks for offline support
   useEffect(() => {
     localStorage.setItem('kdmp_koperasiId', koperasiId);
   }, [koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_coaData', JSON.stringify(coaData));
-  }, [coaData]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_coaData`, JSON.stringify(coaData));
+  }, [coaData, koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_jurnalData', JSON.stringify(jurnalData));
-  }, [jurnalData]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_jurnalData`, JSON.stringify(jurnalData));
+  }, [jurnalData, koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_stokData', JSON.stringify(stokData));
-  }, [stokData]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_stokData`, JSON.stringify(stokData));
+  }, [stokData, koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_stokHistoriData', JSON.stringify(stokHistoriData));
-  }, [stokHistoriData]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_stokHistoriData`, JSON.stringify(stokHistoriData));
+  }, [stokHistoriData, koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_anggotaData', JSON.stringify(anggotaData));
-  }, [anggotaData]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_anggotaData`, JSON.stringify(anggotaData));
+  }, [anggotaData, koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_kontakLainData', JSON.stringify(kontakLainData));
-  }, [kontakLainData]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_kontakLainData`, JSON.stringify(kontakLainData));
+  }, [kontakLainData, koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_tagihanData', JSON.stringify(tagihanData));
-  }, [tagihanData]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_tagihanData`, JSON.stringify(tagihanData));
+  }, [tagihanData, koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_rekeningData', JSON.stringify(rekeningData));
-  }, [rekeningData]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_rekeningData`, JSON.stringify(rekeningData));
+  }, [rekeningData, koperasiId]);
 
   useEffect(() => {
-    localStorage.setItem('kdmp_fixedAssets', JSON.stringify(fixedAssets));
-  }, [fixedAssets]);
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_fixedAssets`, JSON.stringify(fixedAssets));
+  }, [fixedAssets, koperasiId]);
 
   useEffect(() => {
     localStorage.setItem('kdmp_userAccounts', JSON.stringify(userAccounts));
@@ -1563,12 +1567,15 @@ export default function App() {
         setCloudSuccessMessage("Akses Pemilik (Owner) Terverifikasi!");
         const mode = "admin";
         setAccessMode(mode);
-        setUserName("Bpk. Komarudin (SuperIT Owner)");
+        const storedName = localStorage.getItem('kdmp_userName');
+        const finalName = (storedName && storedName !== "Bpk. Komarudin (SuperIT Owner)") ? storedName : "Bpk. Komarudin (SuperIT Owner)";
+
+        setUserName(finalName);
         setUserRole("Pemilik & Pembuat System");
         setCurrentUsername("SuperIT");
         
         localStorage.setItem('kdmp_accessMode', mode);
-        localStorage.setItem('kdmp_userName', "Bpk. Komarudin (SuperIT Owner)");
+        localStorage.setItem('kdmp_userName', finalName);
         localStorage.setItem('kdmp_userRole', "Pemilik & Pembuat System");
         localStorage.setItem('kdmp_currentUsername', "SuperIT");
 
@@ -1576,7 +1583,7 @@ export default function App() {
           tenantId: koperasiId,
           tenantName: koperasiName,
           actorEmail: email,
-          actorName: "Bpk. Komarudin (SuperIT Owner)",
+          actorName: finalName,
           action: "Login Owner via Google",
           category: "Autentikasi",
           severity: "CRITICAL",
@@ -1884,6 +1891,76 @@ export default function App() {
     }
   };
 
+  const handleLogout = () => {
+    if (isSupportMode) {
+      handleExitSupportMode();
+      return;
+    }
+
+    // Log the logout action BEFORE resetting local states
+    if (currentUsername) {
+      logSecurityEvent({
+        tenantId: koperasiId,
+        tenantName: koperasiName,
+        actorEmail: `${currentUsername}@koperasi.net`,
+        actorName: userName || currentUsername,
+        category: "Autentikasi",
+        severity: "INFO",
+        action: "Keluar Sistem",
+        details: `Petugas ${userName || currentUsername} telah keluar secara aman dari sistem portal ${koperasiName}.`,
+        status: "Sukses"
+      }).catch(err => console.warn(err));
+    }
+
+    setAccessMode("login");
+    setUserName("");
+    setUserRole("");
+    setCurrentUsername("");
+    
+    // SECURITY: Clear input fields to protect user privacy (no credentials left behind)
+    setInputUser("");
+    setInputPass("");
+    setCloudEmail("");
+    setCloudPassword("");
+    setCloudConfirmPassword("");
+    setLoginError("");
+    setCloudSuccessMessage("");
+
+    localStorage.removeItem('kdmp_accessMode');
+    localStorage.removeItem('kdmp_userName');
+    localStorage.removeItem('kdmp_userRole');
+    localStorage.removeItem('kdmp_currentUsername');
+    localStorage.removeItem('kdmp_userAccounts');
+    auth.signOut();
+    setInputUser("");
+    setInputPass("");
+    setCloudEmail("");
+    setCloudPassword("");
+    setCloudConfirmPassword("");
+    setRegPassword("");
+    setRegConfirmPassword("");
+    setInputKoperasiId("");
+    setRegKoperasiName("");
+    setRegKoperasiAlamat("");
+    setRegSuperITEmail("");
+    setOwnerPIN("");
+    setLoginError("");
+    setKoperasiError("");
+    setCloudSuccessMessage("");
+    setActivePage("dashboard");
+    setShowStealthBypassConnect(false);
+  };
+
+  const handleDisconnectKoperasi = () => {
+    if (isSupportMode) {
+      handleExitSupportMode();
+      return;
+    }
+    handleLogout();
+    setKoperasiId("");
+    localStorage.removeItem('kdmp_koperasiId');
+  };
+
   const handleImpersonate = (targetId: string) => {
     if (!isSupportMode) {
       setOriginalKoperasiId(koperasiId);
@@ -1935,7 +2012,9 @@ export default function App() {
 
   const handleSuperITEmergencyBypass = async (inputPIN?: string) => {
     const pin = (inputPIN || ownerPIN).trim();
-    if (pin !== "231108") {
+    const dynamicPIN = globalConfig?.rootPIN || "231108";
+
+    if (pin !== dynamicPIN) {
       setBypassError("Akses Ditolak! Kode PIN Kerahasiaan Pemilik System Salah.");
       return;
     }
@@ -2008,20 +2087,39 @@ export default function App() {
     setKoperasiAlamat("Induk Koperasi Operasional Digital");
     localStorage.setItem('kdmp_koperasiAlamat', "Induk Koperasi Operasional Digital");
 
+    // Log the sensitive master bypass access
+    logSecurityEvent({
+      tenantId: "supercloud",
+      tenantName: "Developer System",
+      actorEmail: "root@system.local",
+      actorName: "Bpk. Komarudin",
+      category: "Hak Akses",
+      severity: "CRITICAL",
+      action: "Override Master System",
+      details: "Seorang pengguna telah menggunakan kode PIN Root Kerahasiaan untuk melewati otentikasi standar sistem.",
+      status: "Sukses"
+    }).catch(e => console.warn(e));
+
     const mode = "admin";
     setAccessMode(mode);
-    setUserName("Bpk. Komarudin (SuperIT Owner)");
+    const storedName = localStorage.getItem('kdmp_userName');
+    const finalName = (storedName && storedName !== "Bpk. Komarudin (SuperIT Owner)") ? storedName : "Bpk. Komarudin (SuperIT Owner)";
+
+    setUserName(finalName);
     setUserRole("Pemilik & Pembuat System");
     setCurrentUsername("SuperIT");
     
     localStorage.setItem('kdmp_accessMode', mode);
-    localStorage.setItem('kdmp_userName', "Bpk. Komarudin (SuperIT Owner)");
+    localStorage.setItem('kdmp_userName', finalName);
     localStorage.setItem('kdmp_userRole', "Pemilik & Pembuat System");
     localStorage.setItem('kdmp_currentUsername', "SuperIT");
     
     setLoginError("");
     setBypassError("");
     setCloudSuccessMessage("");
+    setOwnerPIN("");
+    setShowStealthBypassConnect(false);
+    setShowStealthBypassLogin(false);
   };
 
   const startAndInitializeKoperasi = async (id: string, name: string, addr: string) => {
@@ -2232,10 +2330,25 @@ export default function App() {
     // 2. Create history entries for any item that changed
     if (adjustments.length > 0) {
       const now = Date.now();
-      const newHistEntries: StokHistoriEntry[] = adjustments.map((item, idx) => {
+      const newHistEntries: StokHistoriEntry[] = [];
+      const newJournalEntries: JurnalEntry[] = [];
+
+      // Account IDs Lookups
+      const stokId = coaData.find((a) => a.nama.toLowerCase().includes("stok"))?.id || "113";
+      const kasId = coaData.find((a) => a.nama.toLowerCase().includes("kas"))?.id || "111";
+      const pendapatanId = coaData.find((a) => a.nama.toLowerCase().includes("pendapatan penjualan"))?.id || "411";
+      const hppId = coaData.find((a) => a.nama.toLowerCase().includes("hpp"))?.id || "511";
+      const bebanSelisihId = coaData.find((a) => a.nama.toLowerCase().includes("beban selisih"))?.id || "512";
+      const bebanRusakId = coaData.find((a) => a.nama.toLowerCase().includes("beban kerusakan"))?.id || "513";
+
+      adjustments.forEach((item, idx) => {
         const originalStokItem = stokData.find(s => s.id === item.stokId)!;
         const modal = originalStokItem.hargaModal || Math.round(originalStokItem.hargaJual * 0.75);
-        return {
+        const jual = originalStokItem.hargaJual;
+        const diff = item.diff;
+
+        // Add history log entry
+        newHistEntries.push({
           id: `log-opname-${now}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
           tgl: tgl || new Date().toISOString().split('T')[0],
           stokId: item.stokId,
@@ -2245,9 +2358,90 @@ export default function App() {
           qtyAdded: item.diff,
           hargaModal: modal,
           keterangan: `[Stock Opname] Selisih ${item.diff > 0 ? '+' : ''}${item.diff} Pcs: ${item.keterangan || 'Penyesuaian Fisik'} (Oleh: ${petugas})`
-        };
+        });
+
+        // Add Journal Entries (Accounting Integration)
+        if (diff !== 0) {
+          const tglStr = tgl || new Date().toISOString().split('T')[0];
+          const opnNo = `OPN-${now}-${idx}`;
+
+          if (item.keterangan?.includes("Terjual") && diff < 0) {
+            // Case 1: Auto-Recorded Sale from Opname
+            const qtySold = Math.abs(diff);
+            
+            // Debit Kas
+            newJournalEntries.push({
+              id: `JRN-OPNSALE-REV-DR-${now}-${idx}`,
+              tgl: tglStr,
+              no: opnNo,
+              ket: `Penjualan Otomatis (Opname): ${originalStokItem.nama}`,
+              akun: kasId,
+              debet: qtySold * jual,
+              kredit: 0
+            });
+            // Credit Pendapatan
+            newJournalEntries.push({
+              id: `JRN-OPNSALE-REV-CR-${now}-${idx}`,
+              tgl: tglStr,
+              no: opnNo,
+              ket: `Penjualan Otomatis (Opname): ${originalStokItem.nama}`,
+              akun: pendapatanId,
+              debet: 0,
+              kredit: qtySold * jual
+            });
+
+            // Debit HPP
+            newJournalEntries.push({
+              id: `JRN-OPNSALE-HPP-DR-${now}-${idx}`,
+              tgl: tglStr,
+              no: opnNo,
+              ket: `HPP Penjualan (Opname): ${originalStokItem.nama}`,
+              akun: hppId,
+              debet: qtySold * modal,
+              kredit: 0
+            });
+            // Credit Stok
+            newJournalEntries.push({
+              id: `JRN-OPNSALE-HPP-CR-${now}-${idx}`,
+              tgl: tglStr,
+              no: opnNo,
+              ket: `HPP Penjualan (Opname): ${originalStokItem.nama}`,
+              akun: stokId,
+              debet: 0,
+              kredit: qtySold * modal
+            });
+          } else {
+            // Case 2: Stock Shrinkage / Damaged / Surplus
+            const value = Math.abs(diff * modal);
+            const drAkun = diff > 0 ? stokId : (item.keterangan?.includes("Rusak") ? bebanRusakId : bebanSelisihId);
+            const crAkun = diff > 0 ? bebanSelisihId : stokId;
+
+            // Debit
+            newJournalEntries.push({
+              id: `JRN-OPNADJ-DR-${now}-${idx}`,
+              tgl: tglStr,
+              no: opnNo,
+              ket: `Koreksi Stok Opname (${item.keterangan || 'Lainnya'}): ${originalStokItem.nama}`,
+              akun: drAkun,
+              debet: value,
+              kredit: 0
+            });
+            // Credit
+            newJournalEntries.push({
+              id: `JRN-OPNADJ-CR-${now}-${idx}`,
+              tgl: tglStr,
+              no: opnNo,
+              ket: `Koreksi Stok Opname (${item.keterangan || 'Lainnya'}): ${originalStokItem.nama}`,
+              akun: crAkun,
+              debet: 0,
+              kredit: value
+            });
+          }
+        }
       });
+
       setStokHistoriData(prev => [...newHistEntries, ...prev]);
+      setJurnalData(prev => [...newJournalEntries, ...prev]);
     }
   };
 
@@ -2854,9 +3048,18 @@ export default function App() {
     noHp: string,
     email: string,
     tipe: "Biasa" | "Luar Biasa",
-    foto?: string
+    foto?: string,
+    nik?: string,
+    tglLahir?: string,
+    tglBergabung?: string,
+    customId?: string
   ) => {
-    const id = "AG-" + String(anggotaData.length + 1).padStart(3, '0');
+    const today = new Date();
+    const yearStr = today.getFullYear();
+    const monthStr = String(today.getMonth() + 1).padStart(2, '0');
+    const defaultId = `AGT-${yearStr}${monthStr}-${String(anggotaData.length + 1).padStart(4, '0')}`;
+    const id = customId?.trim() || defaultId;
+    
     const newMember: Anggota = {
       id,
       nama,
@@ -2867,9 +3070,42 @@ export default function App() {
       noHp,
       email,
       tipe,
-      foto
+      foto,
+      nik,
+      tglLahir,
+      tglBergabung: tglBergabung || today.toISOString().split('T')[0]
     };
     setAnggotaData([...anggotaData, newMember]);
+
+    // Automatically record initial saving in Jurnal
+    if (simpananPokok > 0) {
+      const now = Date.now();
+      const tgl = new Date().toISOString().split('T')[0];
+      const noBukti = `REG-${id}-${now.toString().slice(-3)}`;
+      const ket = `Simpanan Pokok (Registrasi Anggota Baru) - ${nama} (${id})`;
+      
+      const newJournalEntries: JurnalEntry[] = [
+        {
+          id: `j-${now}-reg-dr`,
+          tgl,
+          no: noBukti,
+          ket,
+          akun: "1-1101", // Kas Tunai
+          debet: simpananPokok,
+          kredit: 0
+        },
+        {
+          id: `j-${now}-reg-cr`,
+          tgl,
+          no: noBukti,
+          ket,
+          akun: "3-3100", // Simpanan Pokok (Equity)
+          debet: 0,
+          kredit: simpananPokok
+        }
+      ];
+      setJurnalData(prev => [...prev, ...newJournalEntries]);
+    }
   };
 
   const handleUpdateAnggota = (
@@ -2881,7 +3117,10 @@ export default function App() {
     noHp: string,
     email: string,
     tipe: "Biasa" | "Luar Biasa",
-    foto?: string
+    foto?: string,
+    nik?: string,
+    tglLahir?: string,
+    tglBergabung?: string
   ) => {
     const nextMembers = anggotaData.map(m => {
       if (m.id === id) {
@@ -2894,7 +3133,10 @@ export default function App() {
           noHp,
           email,
           tipe,
-          foto
+          foto,
+          nik,
+          tglLahir,
+          tglBergabung
         };
       }
       return m;
@@ -3106,6 +3348,7 @@ export default function App() {
           <AnggotaList
             anggotaData={anggotaData}
             tagihanData={tagihanData}
+            jurnalData={jurnalData}
             accessMode={accessMode as any}
             onAddAnggota={handleAddAnggota}
             onUpdateAnggota={handleUpdateAnggota}
@@ -3115,6 +3358,7 @@ export default function App() {
             onDeleteTagihan={handleDeleteTagihan}
             onClearAllTagihan={handleClearAllTagihan}
             onClearLunasTagihan={handleClearLunasTagihan}
+            onAddJurnal={handleAddJurnal}
             koperasiId={koperasiId}
             koperasiName={koperasiName}
             koperasiLogo={koperasiLogo}
@@ -3218,7 +3462,7 @@ export default function App() {
           "Laporan SHU, Neraca & Cashflow"
         );
       case "superadmin":
-        return <SuperAdmin onImpersonate={handleImpersonate} />;
+        return <SuperAdmin onImpersonate={handleImpersonate} globalConfig={globalConfig} setGlobalConfig={setGlobalConfig} lastLocalConfigUpdate={lastLocalConfigUpdate} />;
       case "security_audit":
         return renderPageWithGuard(
           "security_audit",
@@ -3704,7 +3948,7 @@ export default function App() {
               <div className="space-y-1">
                 <h1 className="text-2xl font-black text-slate-900 tracking-tight font-display italic decoration-indigo-500 underline decoration-4 underline-offset-4">FINANCIAL SYSTEM</h1>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">Enterprise Resource Planning</p>
-                <p className="text-[8px] text-indigo-500 font-black uppercase tracking-[0.4em] mt-1">© Lokal Digital System</p>
+                <p className="text-[8px] text-indigo-500 font-black uppercase tracking-[0.4em] mt-1">© Bpk. Komarudin / SuperIT</p>
                 <div className="h-1 w-8 bg-slate-200 mx-auto mt-4 rounded-full" />
               </div>
             </div>
@@ -4085,17 +4329,29 @@ export default function App() {
                 </div>
               )}
             </div>
-            <div className="space-y-1">
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight font-display uppercase">{koperasiName}</h1>
+            <div className="space-y-1.5 w-full">
+              <h1 className="text-xl md:text-2xl font-bold text-slate-950 tracking-tight font-display leading-tight">{koperasiName}</h1>
               <div className="flex items-center justify-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">{isOnline ? 'Cloud Infrastructure' : 'Standalone Mode'}</p>
+                <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">{isOnline ? 'Cloud Infrastructure' : 'Standalone Mode'}</p>
               </div>
               <div className="mt-3 flex items-center justify-center">
-                <span className="px-3 py-1 bg-slate-100 rounded-full text-[9px] font-bold text-slate-400 tracking-widest uppercase">ID: {currentUsername?.toLowerCase() === "superit" ? "OVERRIDE" : koperasiId}</span>
+                <span className="px-3 py-1 bg-slate-50 border border-slate-100 rounded-full text-[8px] font-black text-slate-400 tracking-widest uppercase">NODE ID: {currentUsername?.toLowerCase() === "superit" ? "OVERRIDE" : (koperasiId || "SYSTEM")}</span>
               </div>
             </div>
           </div>
+
+          {globalConfig?.maintenanceMode && (
+            <div className="p-4 bg-rose-600 rounded-3xl text-white shadow-xl flex flex-col gap-2 border-b-4 border-rose-800 animate-pulse">
+              <div className="flex items-center gap-3">
+                <Server className="h-5 w-5 text-white" />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Maintenance Darurat Aktif</span>
+              </div>
+              <p className="text-[9px] font-bold leading-relaxed opacity-90 text-left">
+                Sistem saat ini sedang dalam pemeliharaan terjadwal. Seluruh akses tenant dibekukan sementara. Hubungi tim IT jika Anda memerlukan akses mendesak.
+              </p>
+            </div>
+          )}
 
           {loginError && (
             <div className="p-4 bg-rose-50 border border-rose-100 text-rose-600 text-xs font-semibold rounded-2xl text-center animate-shake">
@@ -4486,7 +4742,7 @@ export default function App() {
             {!isSidebarCollapsed && (
               <button
                 id="app-logout-btn"
-                onClick={handleDisconnectKoperasi}
+                onClick={handleLogout}
                 title="Keluar dari Sistem"
                 className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-all duration-200"
               >
@@ -4513,13 +4769,13 @@ export default function App() {
             </div>
             {!isSidebarCollapsed && (
               <>
-                <h2 id="sidebar-cooperative-title" className="text-xs font-black text-white tracking-wider uppercase leading-tight text-center line-clamp-2 w-full transition-colors duration-300 hover:text-red-500 cursor-default px-1" title={koperasiName}>
+                <h2 id="sidebar-cooperative-title" className="text-sm font-bold text-white tracking-tight leading-tight text-center line-clamp-2 w-full transition-colors duration-300 hover:text-red-500 cursor-default px-1" title={koperasiName}>
                   {koperasiName}
                 </h2>
-                <p className="text-[7px] leading-[13px] text-slate-400 font-bold mt-1 uppercase tracking-[0.2em] truncate w-full px-1">
-                  Forward By Lokal Digital System
+                <p className="text-[8px] leading-[13px] text-slate-500 font-bold mt-1.5 uppercase tracking-[0.1em] truncate w-full px-1">
+                  Enterprise Financial System
                 </p>
-                <span className="mt-2 px-2.5 py-0.5 bg-red-600/20 border border-red-500/30 rounded text-[9px] font-bold text-red-400 tracking-wider uppercase">
+                <span className="mt-2.5 px-3 py-0.5 bg-red-600/10 border border-red-600/30 rounded-full text-[8px] font-black text-red-500 tracking-widest uppercase">
                   Sistem Akuntansi
                 </span>
               </>
@@ -4770,6 +5026,13 @@ export default function App() {
                 >
                   <ShieldCheck className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>System Control Board</span>}
                 </button>
+                
+                {globalConfig?.maintenanceMode && (
+                  <div className={`mt-2 mx-3 p-2 bg-rose-600/20 border border-rose-500/30 rounded-xl flex items-center gap-2 ${isSidebarCollapsed ? 'justify-center mx-1' : ''}`}>
+                    <div className="h-2 w-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                    {!isSidebarCollapsed && <span className="text-[9px] font-black text-rose-400 uppercase tracking-tighter">Maintenance ON</span>}
+                  </div>
+                )}
               </div>
             )}
           </nav>
@@ -4827,7 +5090,7 @@ export default function App() {
         )}
 
         {/* GLOBAL ANNOUNCEMENT BANNER */}
-        {globalConfig?.isAnnouncementActive && !globalConfig.maintenanceMode && (
+        {globalConfig?.isAnnouncementActive && !globalConfig?.maintenanceMode && (
           <div className="mb-6 p-4 bg-indigo-600 rounded-3xl text-white shadow-xl shadow-indigo-100 flex items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-500">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center shrink-0">
@@ -4835,7 +5098,7 @@ export default function App() {
               </div>
               <div className="text-xs font-bold leading-relaxed">
                 <span className="opacity-80 uppercase tracking-widest text-[9px] block mb-0.5">System Update</span>
-                {globalConfig.announcement}
+                {globalConfig?.announcement}
               </div>
             </div>
             <button 
@@ -4847,36 +5110,174 @@ export default function App() {
           </div>
         )}
 
-        {(tenantStatus === "Suspended" || (globalConfig?.maintenanceMode && !isGlobalAdmin)) ? (
+        {/* GLOBAL MAINTENANCE INDICATOR FOR ADMINS */}
+        {!!globalConfig?.maintenanceMode && isGlobalAdmin && (
+          <div className="mb-6 p-4 bg-slate-900 rounded-3xl text-white shadow-2xl flex items-center justify-between gap-4 border-b-4 border-rose-600 overflow-hidden relative group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-rose-600/10 rounded-full -mr-16 -mt-16 blur-3xl" />
+            
+            <div className="flex items-center gap-4 relative z-10">
+              <div className="w-12 h-12 bg-rose-600 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-rose-900/20">
+                <Server className="h-6 w-6 text-white animate-pulse" />
+              </div>
+              <div>
+                <div className="text-[10px] font-black text-rose-500 uppercase tracking-[0.3em] mb-0.5">
+                  Emergency Maintenance Active
+                </div>
+                <div className="text-sm font-bold text-slate-200">
+                  Seluruh akses penyewa diblokir sementara
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3 relative z-10">
+              <div className="hidden md:flex flex-col items-end">
+                <span className="text-[9px] font-black text-slate-500 uppercase">Status Akses</span>
+                <span className="text-[10px] font-bold text-emerald-400">BYPASS AKTIF (OWNER)</span>
+              </div>
+              <div className="h-8 w-px bg-slate-800 mx-1" />
+              <button 
+                onClick={() => setActivePage('superadmin')}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition border border-slate-700"
+              >
+                Dashboard
+              </button>
+            </div>
+          </div>
+        )}
+
+        {(tenantStatus === "Suspended" || (!!globalConfig?.maintenanceMode && isGlobalAdmin !== true)) ? (
           <div className="absolute inset-0 z-50 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-6 text-center">
             <div className="bg-white rounded-3xl p-10 shadow-2xl max-w-sm border-t-8 border-rose-600 animate-in fade-in zoom-in duration-300">
               <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-6">
                 {globalConfig?.maintenanceMode ? <Server className="h-10 w-10 text-rose-600" /> : <ShieldAlert className="h-10 w-10 text-rose-600" />}
               </div>
               <h2 className="text-2xl font-black text-slate-900 mb-3 uppercase tracking-tight">
-                {globalConfig?.maintenanceMode ? "System Maintenance" : "Akun Ditangguhkan"}
+                {globalConfig?.maintenanceMode ? "EMERGENCY MAINTENANCE" : "Akun Ditangguhkan"}
               </h2>
               <p className="text-slate-500 text-sm leading-relaxed mb-8 font-medium">
                 {globalConfig?.maintenanceMode 
-                  ? "Sistem sedang dalam proses pemeliharaan rutin untuk meningkatkan performa. Kami akan segera kembali online."
-                  : `Sistem untuk tenant ${koperasiId} saat ini ditangguhkan oleh administrator.`}
+                  ? "Sistem sedang dalam mode Pemeliharaan Darurat (Emergency Maintenance Mode) untuk perbaikan infrastruktur krusial. Seluruh akses akan kembali normal setelah proses selesai."
+                  : `Sistem untuk tenant ${koperasiId || 'instansi'} saat ini ditangguhkan oleh administrator.`}
                 <br/><br/>
-                Silakan hubungi tim IT Support atau Finance kami untuk panduan lebih lanjut.
+                Harap bersabar dan coba hubungi tim IT Support jika masalah berlanjut.
               </p>
               <button 
-                onClick={handleDisconnectKoperasi}
+                onClick={handleLogout}
                 className="w-full py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-2xl transition shadow-xl"
               >
                 Tutup System
               </button>
             </div>
           </div>
-        ) : renderPage()}
+        ) : (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activePage}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="h-full w-full"
+            >
+              {renderPage()}
+            </motion.div>
+          </AnimatePresence>
+        )}
       </main>
 
       {/* PUBLIC ID-CARD & QR AUTHENTICITY VERIFIER DIALOG CONTAINER */}
       {/* GLOBAL MODALS & OVERLAYS */}
       {publicVerifyPortal}
+
+      {/* REAL-TIME CRITICAL SECURITY NOTIFICATION */}
+      <AnimatePresence>
+        {securityAlert && (
+          <motion.div 
+            initial={{ opacity: 0, x: 20, y: -20, scale: 0.9 }}
+            animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 20, scale: 0.9 }}
+            className="fixed top-6 right-6 z-[9999] w-full max-w-sm"
+          >
+            <div className="bg-white border-2 border-red-500 rounded-3xl shadow-2xl shadow-red-500/20 overflow-hidden relative">
+              {/* Pulse ring */}
+              <div className="absolute top-0 right-0 h-24 w-24 -mr-12 -mt-12 bg-red-500/10 rounded-full animate-pulse" />
+              
+              <div className="p-5 flex gap-4 relative z-10">
+                <div className="h-12 w-12 rounded-2xl bg-red-600 flex items-center justify-center shrink-0 shadow-lg shadow-red-200">
+                  <ShieldAlert className="h-7 w-7 text-white animate-bounce" />
+                </div>
+                
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-red-600 uppercase tracking-[0.2em] leading-none">Security Alert</span>
+                    <button 
+                      onClick={() => setSecurityAlert(null)}
+                      className="p-1 hover:bg-slate-100 rounded-full transition-colors"
+                    >
+                      <X className="h-3 w-3 text-slate-400" />
+                    </button>
+                  </div>
+                  
+                  <h3 className="text-sm font-black text-slate-900 tracking-tight leading-snug">
+                    {securityAlert.action}
+                  </h3>
+                  
+                  <div className="space-y-1.5 pt-0.5">
+                    <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
+                      {securityAlert.details}
+                    </p>
+                    
+                    <div className="flex items-center gap-4 pt-1 border-t border-slate-50 mt-2">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Aktor</span>
+                        <span className="text-[10px] font-black text-slate-700">{securityAlert.actorName}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Waktu</span>
+                        <span className="text-[10px] font-black text-slate-700">{new Date(securityAlert.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Progress bar for auto-hide */}
+              <motion.div 
+                initial={{ width: "100%" }}
+                animate={{ width: "0%" }}
+                transition={{ duration: 15, ease: "linear" }}
+                className="h-1 bg-red-600"
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* FLOATING SUPPORT ACTION HUB */}
+      {accessMode !== 'login' && activePage !== 'support' && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.5, y: 50 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          className="fixed bottom-6 right-6 z-[1000]"
+        >
+          <button
+            onClick={() => setActivePage('support')}
+            className="group relative h-14 w-14 bg-indigo-600 text-white rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 hover:bg-indigo-700"
+          >
+            {unreadSupportCount > 0 && (
+              <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-600 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-lg animate-bounce">
+                {unreadSupportCount}
+              </span>
+            )}
+            <LifeBuoy className="h-6 w-6 animate-spin-slow group-hover:rotate-45 transition-transform" />
+            
+            {/* Tooltip */}
+            <div className="absolute right-full mr-4 bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-xl">
+              Support Center
+            </div>
+          </button>
+        </motion.div>
+      )}
     </div>
   );
 }

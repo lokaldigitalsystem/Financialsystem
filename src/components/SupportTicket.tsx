@@ -26,30 +26,7 @@ import {
   BookmarkCheck
 } from 'lucide-react';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, db, handleCloudError, OperationType } from '../supabase';
-
-export interface TicketMessage {
-  id: string;
-  sender: 'client' | 'admin';
-  senderName: string;
-  senderEmail?: string;
-  message: string;
-  createdAt: string;
-}
-
-export interface SupportTicketData {
-  id: string;
-  tenantId: string;
-  tenantName: string;
-  tenantEmail: string;
-  subject: string;
-  category: 'Eror Teknis' | 'Akuntansi & COA' | 'Billing & Paket' | 'Pertanyaan Umum';
-  priority: 'Rendah' | 'Sedang' | 'Darurat';
-  status: 'Open' | 'In Progress' | 'Resolved';
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  messages: TicketMessage[];
-}
+import { SupportTicketData, TicketMessage } from '../types';
 
 interface SupportTicketProps {
   currentTenantId: string;
@@ -155,6 +132,8 @@ export const SupportTicket: React.FC<SupportTicketProps> = ({
       description: newDescription.trim(),
       createdAt: dateStr,
       updatedAt: dateStr,
+      unreadAdmin: true, // Mark as unread for admin
+      unreadClient: false,
       messages: [
         {
           id: 'msg_init_' + Math.random().toString(36).substring(2, 9),
@@ -197,6 +176,23 @@ export const SupportTicket: React.FC<SupportTicketProps> = ({
     }
   };
 
+  const handleSelectTicket = async (ticket: SupportTicketData) => {
+    setSelectedTicket(ticket);
+    
+    // Clear unread flag for the role opening it
+    if ((isGlobalAdmin && ticket.unreadAdmin) || (!isGlobalAdmin && ticket.unreadClient)) {
+      try {
+        await setDoc(doc(db, "support_tickets", ticket.id), {
+          ...ticket,
+          unreadAdmin: isGlobalAdmin ? false : ticket.unreadAdmin,
+          unreadClient: !isGlobalAdmin ? false : ticket.unreadClient
+        }, { merge: true });
+      } catch (err) {
+        console.error("Failed to mark ticket as read", err);
+      }
+    }
+  };
+
   // Reply to ticket (add message)
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -220,7 +216,9 @@ export const SupportTicket: React.FC<SupportTicketProps> = ({
       updatedAt: dateStr,
       // Auto upgrade open status to progress if admin replies
       status: (isGlobalAdmin && selectedTicket.status === 'Open') ? 'In Progress' : selectedTicket.status,
-      messages: [...selectedTicket.messages, newMsg]
+      messages: [...selectedTicket.messages, newMsg],
+      unreadAdmin: !isGlobalAdmin, // If client replies, admin has unread
+      unreadClient: isGlobalAdmin // If admin replies, client has unread
     };
 
     try {
@@ -440,9 +438,15 @@ export const SupportTicket: React.FC<SupportTicketProps> = ({
                 return (
                   <div
                     key={t.id}
-                    onClick={() => setSelectedTicket(t)}
+                    onClick={() => handleSelectTicket(t)}
                     className={`p-4 rounded-2xl border text-left transition duration-150 cursor-pointer flex flex-col justify-between space-y-3 relative overflow-hidden ${isSelected ? 'border-indigo-600 bg-indigo-50/30' : 'border-slate-150 hover:bg-slate-50 bg-white'}`}
                   >
+                    {((isGlobalAdmin && t.unreadAdmin) || (!isGlobalAdmin && t.unreadClient)) && (
+                      <div className="absolute top-0 right-0 p-1">
+                        <div className="h-2 w-2 rounded-full bg-indigo-600 animate-pulse shadow-lg shadow-indigo-200" />
+                      </div>
+                    )}
+                    
                     {t.priority === 'Darurat' && (
                       <div className="absolute top-0 right-0 w-1.5 h-full bg-red-600 animate-pulse" />
                     )}

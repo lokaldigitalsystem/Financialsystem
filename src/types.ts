@@ -67,6 +67,9 @@ export interface Anggota {
   email?: string;
   tipe?: "Biasa" | "Luar Biasa";
   foto?: string; // Base64 data URL string for member profile photo
+  nik?: string;
+  tglLahir?: string;
+  tglBergabung?: string;
 }
 
 export interface Tagihan {
@@ -139,6 +142,7 @@ export interface Tenant {
   validUntil: string;
   createdAt: string;
   customFeatures?: string[];
+  lastReminder7DaySent?: boolean;
 }
 
 export interface TenantInvoice {
@@ -174,6 +178,32 @@ export interface SecurityAuditEvent {
   ipAddress: string;
   userAgent: string;
   status: "Sukses" | "Gagal" | "Dibatalkan" | "Ditolak";
+}
+
+export interface TicketMessage {
+  id: string;
+  sender: 'client' | 'admin';
+  senderName: string;
+  senderEmail?: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface SupportTicketData {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  tenantEmail: string;
+  subject: string;
+  category: 'Eror Teknis' | 'Akuntansi & COA' | 'Billing & Paket' | 'Pertanyaan Umum';
+  priority: 'Rendah' | 'Sedang' | 'Darurat';
+  status: 'Open' | 'In Progress' | 'Resolved';
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: TicketMessage[];
+  unreadAdmin?: boolean; // New flag for Super Admin
+  unreadClient?: boolean; // New flag for Cooperative Admin
 }
 
 

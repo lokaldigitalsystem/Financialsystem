@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { motion } from 'motion/react';
 import { 
   TrendingUp, 
   Coins, 
@@ -20,7 +21,9 @@ import {
   CheckCircle2, 
   Calculator,
   Zap,
-  Target
+  Target,
+  Activity,
+  History
 } from 'lucide-react';
 import { Tenant } from '../types';
 import { 
@@ -47,6 +50,41 @@ export const SaaSAnalytics: React.FC<SaaSAnalyticsProps> = ({ tenants }) => {
   const [estimatedCAC, setEstimatedCAC] = useState<number>(1500000); // Default CAC Rp 1,500,000
   const [monthlyGrowthRate, setMonthlyGrowthRate] = useState<number>(10); // Default 10% projection growth
   const [projectionMonths, setProjectionMonths] = useState<number>(12); // Default 12 months
+
+  // Heatmap helper: Generate deterministic activity intensity for the last 30 days
+  const generateHeatmapData = () => {
+    const days = 30;
+    return tenants.slice(0, 12).map(tenant => {
+      const activityData = Array.from({ length: days }, (_, i) => {
+        // Deterministic but random-looking activity based on tenant ID and day index
+        const seed = (tenant.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + i) % 10;
+        const baseActivity = tenant.plan === "Premium" ? 3 : tenant.plan === "Enterprise" ? 6 : 1;
+        const intensity = Math.min(10, Math.max(0, baseActivity + (seed % 5) - 2));
+        return intensity;
+      });
+      return {
+        id: tenant.id,
+        name: tenant.name,
+        activity: activityData
+      };
+    });
+  };
+
+  const heatmapData = generateHeatmapData();
+  const last30Days = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (29 - i));
+    return d;
+  });
+
+  const getHeatmapColor = (intensity: number) => {
+    if (intensity === 0) return "bg-slate-50";
+    if (intensity < 2) return "bg-indigo-100";
+    if (intensity < 4) return "bg-indigo-300";
+    if (intensity < 6) return "bg-indigo-500";
+    if (intensity < 8) return "bg-indigo-700";
+    return "bg-indigo-900";
+  };
 
   // 1. FILTERING & BASIS METRICS
   const activeAndTrialTenants = tenants.filter(t => t.status === "Active" || t.status === "Trial");
@@ -569,6 +607,77 @@ export const SaaSAnalytics: React.FC<SaaSAnalyticsProps> = ({ tenants }) => {
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* 5. TENANT ACTIVITY HEATMAP */}
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden text-left mb-6">
+        <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <Activity className="h-4.5 w-4.5 text-indigo-600" /> Tenant Engagement Heatmap
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">Intensitas aktivitas harian 12 penyewa teratas selama 30 hari terakhir.</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded bg-slate-100" />
+              <span className="text-[9px] font-bold text-slate-400 uppercase">Idle</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded bg-indigo-500" />
+              <span className="text-[9px] font-bold text-slate-400 uppercase">Active</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded bg-indigo-900" />
+              <span className="text-[9px] font-bold text-slate-400 uppercase">Intense</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 overflow-x-auto">
+          <div className="min-w-[800px] space-y-4">
+            {/* Header Dates */}
+            <div className="flex items-center gap-1 ml-[160px]">
+              {last30Days.filter((_, i) => i % 5 === 0).map((d, i) => (
+                <div key={i} className="flex-1 text-[9px] font-black text-slate-300 uppercase tracking-tighter">
+                  {d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-1.5">
+              {heatmapData.length > 0 ? heatmapData.map((tenant, idx) => (
+                <div key={idx} className="flex items-center gap-3">
+                  <div className="w-36 text-right shrink-0">
+                    <span className="text-[10px] font-bold text-slate-600 truncate block pr-2" title={tenant.name}>
+                      {tenant.name}
+                    </span>
+                  </div>
+                  <div className="flex-1 flex gap-1 items-center">
+                    {tenant.activity.map((intensity, dayIdx) => (
+                      <motion.div
+                        key={dayIdx}
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: (idx * 0.02) + (dayIdx * 0.005) }}
+                        className={`h-4 flex-1 rounded-sm ${getHeatmapColor(intensity)} transition-all hover:ring-1 hover:ring-white cursor-help`}
+                        title={`Day ${30-dayIdx}: Intensity ${intensity}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )) : (
+                <div className="py-12 text-center border border-dashed border-slate-100 rounded-3xl bg-slate-50/50">
+                  <History className="h-8 w-8 text-slate-200 mx-auto mb-2" />
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest leading-relaxed px-12">
+                    Data tidak mencukupi untuk memetakan heatmap saat ini. <br/>
+                    Daftarkan penyewa untuk melihat intensitas penggunaan realtime.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -26,13 +26,16 @@ import {
   QrCode,
   Printer,
   ArrowLeftRight,
-  ShieldCheck
+  ShieldCheck,
+  Megaphone,
+  RefreshCw
 } from 'lucide-react';
-import { Anggota, Tagihan } from '../types';
+import { Anggota, Tagihan, JurnalEntry } from '../types';
 
 interface AnggotaProps {
   anggotaData: Anggota[];
   tagihanData: Tagihan[];
+  jurnalData: JurnalEntry[];
   accessMode: "admin" | "view";
   onAddAnggota: (
     nama: string, 
@@ -42,7 +45,11 @@ interface AnggotaProps {
     noHp: string, 
     email: string,
     tipe: "Biasa" | "Luar Biasa",
-    foto?: string
+    foto?: string,
+    nik?: string,
+    tglLahir?: string,
+    tglBergabung?: string,
+    customId?: string
   ) => void;
   onUpdateAnggota: (
     id: string, 
@@ -53,7 +60,10 @@ interface AnggotaProps {
     noHp: string, 
     email: string,
     tipe: "Biasa" | "Luar Biasa",
-    foto?: string
+    foto?: string,
+    nik?: string,
+    tglLahir?: string,
+    tglBergabung?: string
   ) => void;
   onDeleteAnggota: (id: string) => void;
   onAddTagihan: (
@@ -67,6 +77,7 @@ interface AnggotaProps {
   onDeleteTagihan: (id: string) => void;
   onClearAllTagihan?: () => void;
   onClearLunasTagihan?: () => void;
+  onAddJurnal?: (tgl: string, no: string, ket: string, entries: { akun: string; debet: number; kredit: number }[]) => void;
   koperasiId?: string;
   koperasiName?: string;
   koperasiLogo?: string;
@@ -84,17 +95,25 @@ export function AnggotaList(props: AnggotaProps) {
 
   // ID Card Viewer states for members
   const [selectedIdCardMember, setSelectedIdCardMember] = useState<Anggota | null>(null);
+  const [selectedPrintBill, setSelectedPrintBill] = useState<Tagihan | null>(null);
+  const [selectedBillsForBulkPrint, setSelectedBillsForBulkPrint] = useState<Tagihan[]>([]);
+  const [bulkSelection, setBulkSelection] = useState<string[]>([]);
   const [isCardFlipped, setIsCardFlipped] = useState(false);
+  const [detailTab, setDetailTab] = useState<"card" | "savings">("card");
 
   // Member Form Fields
+  const [formId, setFormId] = useState("");
   const [nama, setNama] = useState("");
   const [alamat, setAlamat] = useState("");
-  const [simpanan, setSimpanan] = useState(250000);
+  const [simpanan, setSimpanan] = useState(0);
   const [jenisKelamin, setJenisKelamin] = useState<"Laki-laki" | "Perempuan">("Laki-laki");
-  const [noHp, setNoHp] = useState("628");
+  const [noHp, setNoHp] = useState("");
   const [email, setEmail] = useState("");
   const [tipe, setTipe] = useState<"Biasa" | "Luar Biasa">("Biasa");
   const [foto, setFoto] = useState("");
+  const [nik, setNik] = useState("");
+  const [tglLahir, setTglLahir] = useState("");
+  const [tglBergabung, setTglBergabung] = useState("");
 
   // Search Filter for members list
   const [filterQuery, setFilterQuery] = useState("");
@@ -119,6 +138,14 @@ export function AnggotaList(props: AnggotaProps) {
   const [tagihanPageSize, setTagihanPageSize] = useState<number>(10);
   const [tagihanCurrentPage, setTagihanCurrentPage] = useState<number>(1);
   const [showPurgeConfirm, setShowPurgeConfirm] = useState<"all" | "lunas" | null>(null);
+
+  // Quick Deposit State
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [depositAnggota, setDepositAnggota] = useState<Anggota | null>(null);
+  const [depositAmount, setDepositAmount] = useState(50000);
+  const [depositType, setDepositType] = useState("3-3200"); // Default Simpanan Wajib
+  const [depositDate, setDepositDate] = useState(new Date().toISOString().split('T')[0]);
+  const [depositNote, setDepositNote] = useState("");
 
   // Reset errors & reset pages on search
   React.useEffect(() => {
@@ -149,26 +176,30 @@ export function AnggotaList(props: AnggotaProps) {
     }
 
     if (editingItem) {
-      props.onUpdateAnggota(editingItem.id, nama, alamat, simpanan, jenisKelamin, cleanedPhone, email, tipe, foto);
+      props.onUpdateAnggota(editingItem.id, nama, alamat, simpanan, jenisKelamin, cleanedPhone, email, tipe, foto, nik, tglLahir, tglBergabung);
     } else {
-      props.onAddAnggota(nama, alamat, simpanan, jenisKelamin, cleanedPhone, email, tipe, foto);
+      props.onAddAnggota(nama, alamat, simpanan, jenisKelamin, cleanedPhone, email, tipe, foto, nik, tglLahir, tglBergabung, formId);
     }
 
     // Reset
     setNama("");
     setAlamat("");
-    setSimpanan(250000);
+    setSimpanan(0);
     setJenisKelamin("Laki-laki");
-    setNoHp("628");
+    setNoHp("");
     setEmail("");
     setTipe("Biasa");
     setFoto("");
+    setNik("");
+    setTglLahir("");
+    setTglBergabung("");
     setEditingItem(null);
     setIsModalOpen(false);
   };
 
   const handleEditClick = (item: Anggota) => {
     setEditingItem(item);
+    setFormId(item.id);
     setNama(item.nama);
     setAlamat(item.alamat);
     setSimpanan(item.simpananPokok);
@@ -177,19 +208,26 @@ export function AnggotaList(props: AnggotaProps) {
     setEmail(item.email || "");
     setTipe(item.tipe || "Biasa");
     setFoto(item.foto || "");
+    setNik(item.nik || "");
+    setTglLahir(item.tglLahir || "");
+    setTglBergabung(item.tglBergabung || "");
     setIsModalOpen(true);
   };
 
   const handleOpenCreateModal = () => {
     setEditingItem(null);
+    setFormId("");
     setNama("");
     setAlamat("");
-    setSimpanan(250000);
+    setSimpanan(0);
     setJenisKelamin("Laki-laki");
-    setNoHp("628");
+    setNoHp("");
     setEmail("");
     setTipe("Biasa");
     setFoto("");
+    setNik("");
+    setTglLahir("");
+    setTglBergabung(new Date().toISOString().split('T')[0]);
     setIsModalOpen(true);
   };
 
@@ -220,6 +258,29 @@ export function AnggotaList(props: AnggotaProps) {
 
     props.onAddTagihan(billAnggotaId, billKategori, billJumlah, billTgl, billKet);
     setIsBillingModalOpen(false);
+  };
+
+  const handleSubmitDeposit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!depositAnggota || depositAmount <= 0 || !props.onAddJurnal) return;
+
+    const typeLabel = depositType === "3-3100" ? "Pokok" : (depositType === "3-3200" ? "Wajib" : "Sukarela");
+    const noBukti = `DEP-${Date.now().toString().slice(-6)}`;
+    const keterangan = `Setoran Simpanan ${typeLabel} - ${depositAnggota.nama} (${depositAnggota.id}) ${depositNote ? '- ' + depositNote : ''}`;
+
+    props.onAddJurnal(
+      depositDate,
+      noBukti,
+      keterangan,
+      [
+        { akun: "1-1101", debet: depositAmount, kredit: 0 }, // Debet Kas
+        { akun: depositType, debet: 0, kredit: depositAmount } // Kredit Simpanan
+      ]
+    );
+
+    setIsDepositModalOpen(false);
+    setDepositNote("");
+    setDepositAmount(50000);
   };
 
   // Whatsapp redirect generator link
@@ -378,6 +439,15 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
     document.body.removeChild(link);
   };
 
+  const calculateAge = (birthday?: string) => {
+    if (!birthday) return null;
+    const birth = new Date(birthday);
+    if (isNaN(birth.getTime())) return null;
+    const ageDifMs = Date.now() - birth.getTime();
+    const ageDate = new Date(ageDifMs);
+    return Math.abs(ageDate.getUTCFullYear() - 1970);
+  };
+
   return (
     <div id="anggota-keanggotaan-screen">
       {/* HEADER BAR */}
@@ -493,7 +563,7 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
                     <th className="py-3 px-4 text-center">Jenis Kelamin</th>
                     <th className="py-3 px-4"><div className="flex items-center gap-1.5"><Home className="h-3.5 w-3.5" /> Dusun / Alamat KTP</div></th>
                     <th className="py-3 px-4 text-center">Kontak WhatsApp / Email</th>
-                    <th className="py-3 px-4 text-right">Simpanan Pokok</th>
+                    <th className="py-3 px-4 text-right">Total Simpanan</th>
                     <th className="py-3 px-4 text-center">Tindakan</th>
                   </tr>
                 </thead>
@@ -505,115 +575,129 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
                       </td>
                     </tr>
                   ) : (
-                    paginatedAnggota.map(item => (
-                      <tr key={item.id} className="hover:bg-red-50/10 transition-colors">
-                        <td className="py-3.5 px-4 font-mono font-bold text-gray-800">
-                          {item.id}
-                        </td>
-                        <td className="py-3.5 px-4 animate-in fade-in duration-200">
-                          <div className="font-bold text-gray-900">{item.nama}</div>
-                          <span className={`inline-block mt-0.5 px-1.5 py-0.5 text-[9px] font-bold rounded ${
-                            item.tipe === "Luar Biasa"
-                              ? "bg-amber-150 text-amber-850 border border-amber-200"
-                              : "bg-blue-50 text-blue-700 border border-blue-200"
-                          }`}>
-                            Anggota {item.tipe || "Biasa"}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span className={`inline-block px-2 py-0.5 text-[10px] font-bold rounded-full ${
-                            item.jenisKelamin === 'Perempuan' 
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200' 
-                              : 'bg-sky-100 text-sky-800 border border-sky-200'
-                          }`}>
-                            {item.jenisKelamin || "Laki-laki"}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 font-medium text-gray-600">
-                          {item.alamat}
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <div className="flex flex-col items-center gap-1">
-                            {item.noHp ? (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-emerald-700">
-                                <Phone className="h-3 w-3 text-emerald-500" /> {item.noHp}
+                    paginatedAnggota.map(item => {
+                      const savingsCodes = ["3-3000", "3-3100", "3-3200", "3-3300"];
+                      const memberBalance = (props.jurnalData || [])
+                        .filter(j => 
+                          j.ket.includes(`(${item.id})`) && 
+                          savingsCodes.some(code => j.akun.startsWith(code))
+                        )
+                        .reduce((sum, j) => sum + (j.kredit - j.debet), 0);
+                      
+                      return (
+                        <tr key={item.id} className="hover:bg-red-50/10 transition-colors">
+                          <td className="py-3.5 px-4 font-mono">
+                            <div className="font-bold text-gray-800">{item.id}</div>
+                            {item.nik && <div className="text-[9px] text-gray-400">NIK: {item.nik}</div>}
+                          </td>
+                          <td className="py-3.5 px-4 animate-in fade-in duration-200">
+                            <div className="font-bold text-gray-900">{item.nama}</div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold rounded ${
+                                item.tipe === "Luar Biasa"
+                                  ? "bg-amber-150 text-amber-850 border border-amber-200"
+                                  : "bg-blue-50 text-blue-700 border border-blue-200"
+                              }`}>
+                                Anggota {item.tipe || "Biasa"}
                               </span>
-                            ) : (
-                              <span className="text-[10px] text-gray-400 italic">No HP n/a</span>
-                            )}
-                            {item.email ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-gray-500">
-                                <Mail className="h-2.5 w-2.5 text-gray-400" /> {item.email}
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-gray-400 italic">Email n/a</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-bold text-gray-900 font-mono">
-                          Rp {item.simpananPokok.toLocaleString('id-ID')}
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <div className="inline-flex gap-1.5 justify-center items-center">
-                            {/* QR Code trigger button for ID Card */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedIdCardMember(item);
-                                setIsCardFlipped(false);
-                              }}
-                              className="inline-flex items-center gap-1 py-1 px-2.5 bg-red-50 hover:bg-red-100 text-red-650 hover:text-red-800 text-[10px] font-black uppercase rounded cursor-pointer transition"
-                              title="Cetak & Lihat ID Card QR"
-                            >
-                              <QrCode className="h-3.5 w-3.5 text-red-600" /> ID Card
-                            </button>
-
-                            {props.accessMode === "admin" && (
-                              <>
-                                {confirmDeleteId === item.id ? (
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      onClick={() => {
-                                        props.onDeleteAnggota(item.id);
-                                        setConfirmDeleteId(null);
-                                      }}
-                                      className="bg-red-600 hover:bg-red-700 text-white text-[9px] px-2 py-0.5 rounded font-black cursor-pointer transition whitespace-nowrap"
-                                    >
-                                      Ya, Hapus
-                                    </button>
-                                    <button
-                                      onClick={() => setConfirmDeleteId(null)}
-                                      className="bg-gray-100 hover:bg-gray-200 text-gray-650 text-[9px] px-1.5 py-0.5 rounded font-bold cursor-pointer transition"
-                                    >
-                                      Batal
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <button
-                                      onClick={() => handleEditClick(item)}
-                                      className="p-1 text-sky-650 hover:text-sky-850 hover:bg-sky-50 rounded transition cursor-pointer"
-                                      title="Edit Profil Lengkap"
-                                    >
-                                      <Edit2 className="h-4 w-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => setConfirmDeleteId(item.id)}
-                                      className="p-1 text-rose-600 hover:text-rose-850 hover:bg-rose-55/10 rounded transition cursor-pointer"
-                                      title="Hapus Dari Anggota"
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </button>
-                                  </>
-                                )}
-                              </>
-                            )}
+                              {item.tglLahir && (
+                                <span className="text-[9px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
+                                  {calculateAge(item.tglLahir)} Thn
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <span className={`inline-block px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                              item.jenisKelamin === 'Perempuan' 
+                                ? 'bg-rose-100 text-rose-800 border border-rose-200' 
+                                : 'bg-sky-100 text-sky-800 border border-sky-200'
+                            }`}>
+                              {item.jenisKelamin || "Laki-laki"}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-medium text-gray-600">
+                            {item.alamat}
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <div className="flex flex-col items-center gap-1">
+                              {item.noHp ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-emerald-700">
+                                  <Phone className="h-3 w-3 text-emerald-500" /> {item.noHp}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-gray-400 italic">No HP n/a</span>
+                              )}
+                              {item.email ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-gray-500">
+                                  <Mail className="h-2.5 w-2.5 text-gray-400" /> {item.email}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-gray-400 italic">Email n/a</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-bold text-gray-900 font-mono">
+                            <span className={memberBalance > 0 ? "text-emerald-600" : "text-gray-400"}>
+                              Rp {memberBalance.toLocaleString('id-ID')}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <div className="inline-flex gap-1.5 justify-center items-center">
+                              {/* QR Code trigger button for ID Card */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedIdCardMember(item);
+                                  setIsCardFlipped(false);
+                                  setDetailTab("card");
+                                }}
+                                className="inline-flex items-center gap-1 py-1 px-2.5 bg-red-50 hover:bg-red-100 text-red-650 hover:text-red-800 text-[10px] font-black uppercase rounded cursor-pointer transition"
+                                title="Cetak & Lihat ID Card QR"
+                              >
+                                <QrCode className="h-3.5 w-3.5 text-red-600" /> Detail
+                              </button>
+  
+                              {props.accessMode === "admin" && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDepositAnggota(item);
+                                    setDepositType("3-3300"); // Default to Sukarela for this button
+                                    setIsDepositModalOpen(true);
+                                  }}
+                                  className="inline-flex items-center gap-1 py-1 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase rounded cursor-pointer transition shadow-sm"
+                                  title="Proses Setoran Simpanan Sukarela (Tabungan)"
+                                >
+                                  <DollarSign className="h-3.5 w-3.5" /> Setor Sukarela
+                                </button>
+                              )}
+  
+                              {props.accessMode === "admin" && (
+                                <>
+                                  <button
+                                    onClick={() => handleEditClick(item)}
+                                    className="p-1 text-sky-650 hover:text-sky-850 hover:bg-sky-50 rounded transition cursor-pointer"
+                                    title="Edit Profil Lengkap"
+                                  >
+                                    <Edit2 className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmDeleteId(item.id)}
+                                    className="p-1 text-rose-600 hover:text-rose-850 hover:bg-rose-55/10 rounded transition cursor-pointer"
+                                    title="Hapus Dari Anggota"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </>
+                              )}
                           </div>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
+                    );
+                  })
+                )}
+              </tbody>
               </table>
             </div>
 
@@ -790,11 +874,87 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
                     >
                       <PlusCircle className="h-4 w-4" /> Buat Tagihan Baru
                     </button>
+                    {bulkSelection.length > 0 && (
+                      <button
+                        onClick={() => {
+                          const selected = props.tagihanData.filter(t => bulkSelection.includes(t.id));
+                          setSelectedBillsForBulkPrint(selected);
+                        }}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded shadow transition flex items-center justify-center gap-1.5 cursor-pointer animate-in zoom-in-95"
+                      >
+                        <Printer className="h-4 w-4" /> Cetak Terpilih ({bulkSelection.length})
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
             )}
           </div>
+
+          {/* AUTOMATION CONTROLS PANEL */}
+          {props.accessMode === "admin" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex items-center justify-between">
+                <div className="flex gap-3 items-center">
+                  <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-sm">
+                    <RefreshCw className="h-5 w-5 animate-spin-slow" />
+                  </div>
+                  <div>
+                    <h4 className="text-[11px] font-black text-indigo-900 uppercase tracking-tight">Automated Monthly Billing</h4>
+                    <p className="text-[10px] text-indigo-700 font-medium leading-none">Generasi tagihan Simpanan Wajib massal harian/bulanan.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/admin/trigger-member-billing', { method: 'POST' });
+                      if(res.ok) alert("Proses automasi billing anggota berhasil dijalankan!");
+                    } catch (e) {
+                      alert("Gagal menghubungi server automasi.");
+                    }
+                  }}
+                  className="px-4 py-2 bg-white hover:bg-indigo-100 text-indigo-700 text-[9px] font-black uppercase tracking-widest rounded-lg border border-indigo-200 transition shadow-sm cursor-pointer"
+                >
+                  Trigger Manual
+                </button>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-center justify-between">
+                <div className="flex gap-3 items-center">
+                  <div className="h-10 w-10 bg-amber-600 rounded-xl flex items-center justify-center text-white shadow-sm">
+                    <Megaphone className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-[11px] font-black text-amber-900 uppercase tracking-tight">Bulk Unpaid Reminder</h4>
+                    <p className="text-[10px] text-amber-700 font-medium leading-none">Kirim pengingat email/notifikasi ke {unpaidBills.length} anggota.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={unpaidBills.length === 0}
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/member/bulk-notify-unpaid', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                          koperasiId: props.koperasiId || "local",
+                          bills: unpaidBills.map(b => b.id)
+                        })
+                      });
+                      if(res.ok) alert(`Pemberitahuan massal terkirim ke ${unpaidBills.length} anggota!`);
+                    } catch (e) {
+                      alert("Gagal menghubungi server automasi.");
+                    }
+                  }}
+                  className="px-4 py-2 bg-white hover:bg-amber-100 text-amber-700 text-[9px] font-black uppercase tracking-widest rounded-lg border border-amber-200 transition shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Kirim Pengingat Massal
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* BILLING AND NOTIFICATION ACTIONS TABLE */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -802,6 +962,20 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
               <table className="w-full min-w-[900px] border-collapse text-left">
                 <thead>
                   <tr className="bg-slate-800 text-white text-xs font-semibold">
+                    <th className="py-3 px-4 w-10">
+                      <input 
+                        type="checkbox"
+                        className="rounded border-gray-300 text-red-600 h-3.5 w-3.5 cursor-pointer"
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setBulkSelection(paginatedBills.map(b => b.id));
+                          } else {
+                            setBulkSelection([]);
+                          }
+                        }}
+                        checked={bulkSelection.length > 0 && bulkSelection.length === paginatedBills.length}
+                      />
+                    </th>
                     <th className="py-3 px-4">Invoice ID</th>
                     <th className="py-3 px-4">Anggota Penerima</th>
                     <th className="py-3 px-4">Kategori & Tanggal</th>
@@ -825,6 +999,20 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
                       
                       return (
                         <tr key={bill.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="py-3.5 px-4">
+                            <input 
+                              type="checkbox"
+                              className="rounded border-gray-300 text-red-600 h-3.5 w-3.5 cursor-pointer"
+                              checked={bulkSelection.includes(bill.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setBulkSelection([...bulkSelection, bill.id]);
+                                } else {
+                                  setBulkSelection(bulkSelection.filter(id => id !== bill.id));
+                                }
+                              }}
+                            />
+                          </td>
                           <td className="py-3.5 px-4 font-mono font-bold text-gray-800">
                             {bill.id}
                           </td>
@@ -873,6 +1061,13 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
                                   >
                                     <Mail className="h-3.5 w-3.5" /> Email
                                   </button>
+                                  <button
+                                    onClick={() => setSelectedPrintBill(bill)}
+                                    className="inline-flex items-center gap-1 py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10.5px] rounded border border-slate-200 shadow-xs cursor-pointer transition"
+                                    title="Cetak Lembar Tagihan / Invoice Resmi"
+                                  >
+                                    <Printer className="h-3.5 w-3.5" /> Cetak
+                                  </button>
                                 </>
                               ) : (
                                 <span className="text-[10px] text-slate-500 font-bold bg-slate-100 border border-slate-200 rounded px-2 py-1 flex items-center gap-1">
@@ -902,30 +1097,16 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
                                 )}
 
                                 {confirmDeleteTagihanId === bill.id ? (
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      onClick={() => {
-                                        props.onDeleteTagihan(bill.id);
-                                        setConfirmDeleteTagihanId(null);
-                                      }}
-                                      className="bg-red-650 text-white text-[9px] px-1.5 py-0.5 rounded cursor-pointer"
-                                    >
-                                      Ya
-                                    </button>
-                                    <button
-                                      onClick={() => setConfirmDeleteTagihanId(null)}
-                                      className="bg-gray-105 text-gray-500 text-[9px] px-1.5 py-0.5 rounded cursor-pointer"
-                                    >
-                                      Tutup
-                                    </button>
+                                  <div className="flex items-center gap-1 px-2 py-1 bg-red-50 border border-red-200 rounded-lg animate-pulse">
+                                    <span className="text-[8px] font-bold text-red-600 uppercase">Hapus Tagihan?</span>
                                   </div>
                                 ) : (
                                   <button
                                     onClick={() => setConfirmDeleteTagihanId(bill.id)}
-                                    className="p-1 text-gray-400 hover:text-red-600 rounded transition cursor-pointer"
+                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
                                     title="Hapus Tagihan Ini"
                                   >
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <Trash2 className="h-4 w-4" />
                                   </button>
                                 )}
                               </div>
@@ -990,179 +1171,376 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
       {/* DIALOG ADD/EDIT MEMBER POPUP */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="bg-red-600 px-5 py-4 text-white flex justify-between items-center">
-              <h3 className="font-bold text-sm">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-red-600 px-6 py-4 text-white flex justify-between items-center">
+              <h3 className="font-bold text-base">
                 {editingItem ? "Ubah Data Profil Warga" : "Registrasi Anggota Desa Baru"}
               </h3>
               <button 
-                onClick={() => setIsModalOpen(false)}
-                className="text-white hover:text-white/80 font-bold text-lg"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingItem(null);
+                  setNama("");
+                  setAlamat("");
+                  setSimpanan(0);
+                  setJenisKelamin("Laki-laki");
+                  setNoHp("");
+                }}
+                className="text-white hover:text-white/80 font-bold text-lg p-1"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
             
-            <form onSubmit={handleCreateOrEdit} className="p-5 text-left space-y-3">
+            <form onSubmit={handleCreateOrEdit} className="p-6 text-left space-y-6">
               {errorMsg && (
                 <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-[11px] font-bold rounded-lg leading-relaxed animate-shake">
                   {errorMsg}
                 </div>
               )}
-              
-              <div className="flex flex-col gap-1">
-                <label className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Nama Lengkap Warga (KTP)</label>
-                <input
-                  id="form-member-name"
-                  type="text"
-                  required
-                  placeholder="Masukkan nama lengkap warga"
-                  className="px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-red-500 text-gray-850"
-                  value={nama}
-                  onChange={(e) => setNama(e.target.value)}
-                />
-              </div>
 
-              {/* GENDER SELECT FIELD */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Jenis Kelamin</label>
-                <select
-                  id="form-member-gender"
-                  required
-                  className="px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-red-500 text-gray-850"
-                  value={jenisKelamin}
-                  onChange={(e) => setJenisKelamin(e.target.value as any)}
-                >
-                  <option value="Laki-laki">Laki-laki</option>
-                  <option value="Perempuan">Perempuan</option>
-                </select>
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-5">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">ID Anggota (Opsional)</label>
+                  <input
+                    type="text"
+                    placeholder="Kosongkan untuk otomatis..."
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 font-mono font-bold text-red-600"
+                    value={formId}
+                    onChange={(e) => setFormId(e.target.value)}
+                  />
+                </div>
+                
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Nama Lengkap Warga (KTP)</label>
+                  <input
+                    id="form-member-name"
+                    type="text"
+                    required
+                    placeholder="Masukkan nama sesuai KTP"
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 text-gray-850 font-semibold"
+                    value={nama}
+                    onChange={(e) => setNama(e.target.value)}
+                  />
+                </div>
 
-              <div className="flex flex-col gap-1">
-                <label className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Wilayah Alamat Dusun</label>
-                <input
-                  id="form-member-address"
-                  type="text"
-                  required
-                  placeholder="Contoh: Dusun Jomin 01, RT 02/01"
-                  className="px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-red-500 text-gray-850"
-                  value={alamat}
-                  onChange={(e) => setAlamat(e.target.value)}
-                />
-              </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">NIK (16 Digit KTP)</label>
+                  <input
+                    id="form-member-nik"
+                    type="text"
+                    placeholder="Contoh: 3201xxxxxxxxxxxx"
+                    maxLength={16}
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 font-mono text-gray-850"
+                    value={nik}
+                    onChange={(e) => setNik(e.target.value.replace(/[^0-9]/g, ''))}
+                  />
+                </div>
 
-              {/* WHATSAPP CONTACT */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Nomor WhatsApp Aktif</label>
-                <input
-                  id="form-member-phone"
-                  type="text"
-                  required
-                  placeholder="Format: 62812xxxxxx (Gunakan kode 62)"
-                  className="px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-red-500 font-mono text-gray-850"
-                  value={noHp}
-                  onChange={(e) => setNoHp(e.target.value)}
-                />
-              </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Jenis Kelamin</label>
+                  <select
+                    id="form-member-gender"
+                    required
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 text-gray-850 font-medium"
+                    value={jenisKelamin}
+                    onChange={(e) => setJenisKelamin(e.target.value as any)}
+                  >
+                    <option value="Laki-laki">Laki-laki</option>
+                    <option value="Perempuan">Perempuan</option>
+                  </select>
+                </div>
 
-              {/* EMAIL CONTACT */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Surat Elektronik (Email)</label>
-                <input
-                  id="form-member-email"
-                  type="email"
-                  placeholder="warga@koperasi.id"
-                  className="px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-red-500 text-gray-850"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Tanggal Lahir</label>
+                  <input
+                    id="form-member-birthdate"
+                    type="date"
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 text-gray-850"
+                    value={tglLahir}
+                    onChange={(e) => setTglLahir(e.target.value)}
+                  />
+                </div>
 
-              {/* MEMBER TYPE SELECT FIELD */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Tipe/Klasifikasi Anggota</label>
-                <select
-                  id="form-member-type"
-                  required
-                  className="px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-red-500 text-gray-850 font-bold"
-                  value={tipe}
-                  onChange={(e) => setTipe(e.target.value as "Biasa" | "Luar Biasa")}
-                >
-                  <option value="Biasa">Anggota Biasa (Penduduk Desa)</option>
-                  <option value="Luar Biasa">Anggota Luar Biasa (Mitra / Luar Desa)</option>
-                </select>
-              </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Wilayah Alamat Dusun</label>
+                  <input
+                    id="form-member-address"
+                    type="text"
+                    required
+                    placeholder="Contoh: Dusun Jomin 01, RT 02/01"
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 text-gray-850"
+                    value={alamat}
+                    onChange={(e) => setAlamat(e.target.value)}
+                  />
+                </div>
 
-              <div className="flex flex-col gap-1">
-                <label className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Simpanan Pokok Buku Awal (Rp)</label>
-                <input
-                  id="form-member-deposit"
-                  type="number"
-                  required
-                  min="0"
-                  placeholder="250000"
-                  className="px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-red-500 font-bold font-mono text-gray-850"
-                  value={simpanan}
-                  onChange={(e) => setSimpanan(Math.max(0, parseFloat(e.target.value) || 0))}
-                />
-              </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Nomor WhatsApp (62)</label>
+                  <input
+                    id="form-member-phone"
+                    type="text"
+                    required
+                    placeholder="Format: 6281xxxxxxxxx"
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 font-mono text-gray-850"
+                    value={noHp}
+                    onChange={(e) => setNoHp(e.target.value)}
+                  />
+                </div>
 
-              {/* PHOTO UPLOAD FIELD */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Foto Profil ID Card</label>
-                <div className="flex items-center gap-3 p-2 bg-gray-50 rounded border border-gray-200">
-                  {foto ? (
-                    <div className="relative w-12 h-12 rounded border border-gray-200 overflow-hidden shrink-0">
-                      <img src={foto} alt="Preview" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => setFoto("")}
-                        className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[9px] font-black uppercase cursor-pointer"
-                      >
-                        Hapus
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="w-12 h-12 rounded bg-gray-150 border border-dashed border-gray-300 flex items-center justify-center shrink-0">
-                      <Users className="h-5 w-5 text-gray-400" />
-                    </div>
-                  )}
-                  <div className="flex-1">
-                    <input
-                      type="file"
-                      id="anggota-photo-upload"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onloadend = () => {
-                            setFoto(reader.result as string);
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                      className="text-[10px] text-gray-505 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[9px] file:font-black file:uppercase file:bg-gray-200 file:text-gray-800 hover:file:bg-gray-300 cursor-pointer"
-                    />
-                    <p className="text-[8px] text-gray-400 mt-1 leading-tight">Format JPG/PNG persegi, maks 1MB.</p>
-                  </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Surat Elektronik (Email)</label>
+                  <input
+                    id="form-member-email"
+                    type="email"
+                    placeholder="warga@desa.id"
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 text-gray-850"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Tanggal Bergabung</label>
+                  <input
+                    id="form-member-joined"
+                    type="date"
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 text-gray-850"
+                    value={tglBergabung}
+                    onChange={(e) => setTglBergabung(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Tipe/Klasifikasi Anggota</label>
+                  <select
+                    id="form-member-type"
+                    required
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 text-gray-850 font-bold"
+                    value={tipe}
+                    onChange={(e) => setTipe(e.target.value as "Biasa" | "Luar Biasa")}
+                  >
+                    <option value="Biasa">Anggota Biasa (Penduduk Desa)</option>
+                    <option value="Luar Biasa">Anggota Luar Biasa (Mitra / Luar Desa)</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Setoran Pokok Awal (Rp)</label>
+                  <input
+                    id="form-member-deposit"
+                    type="number"
+                    required
+                    min="0"
+                    placeholder="Contoh: 250000"
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 font-bold font-mono text-gray-850"
+                    value={simpanan}
+                    onChange={(e) => setSimpanan(Math.max(0, parseFloat(e.target.value) || 0))}
+                  />
                 </div>
               </div>
 
-              <div className="pt-3 flex gap-2">
+              <div className="pt-6 border-t border-slate-100 flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-1.5 text-xs text-gray-500 border border-gray-200 hover:bg-gray-50 rounded transition font-medium text-center cursor-pointer"
+                  className="px-6 py-2 text-xs text-gray-500 hover:bg-gray-50 border border-gray-200 rounded-lg transition font-bold cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   id="submit-member-btn"
                   type="submit"
-                  className="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded shadow transition text-center cursor-pointer"
+                  className="px-8 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase tracking-wider rounded-lg shadow-md transition transform active:scale-95 cursor-pointer"
                 >
-                  {editingItem ? "Simpan Pembaruan" : "Daftarkan Anggota"}
+                  {editingItem ? "Update Profil" : "Registrasi"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+      )}
+
+      {/* DELETE TAGIHAN CONFIRMATION MODAL - Upgraded from inline for professional touch */}
+      {confirmDeleteTagihanId && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="h-8 w-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-black text-slate-800 mb-2">Konfirmasi Hapus Tagihan</h3>
+              <p className="text-xs text-slate-500 leading-relaxed mb-6 px-2">
+                Apakah Anda yakin ingin menghapus catatan tagihan untuk <span className="font-bold text-red-600">
+                  {props.tagihanData.find(t => t.id === confirmDeleteTagihanId)?.anggotaNama}
+                </span>? Tindakan ini akan menghapus bukti piutang selamanya.
+              </p>
+              
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteTagihanId(null)}
+                  className="flex-1 py-3 text-xs text-slate-500 font-bold uppercase tracking-wider rounded-xl hover:bg-slate-50 transition cursor-pointer border border-slate-200"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirmDeleteTagihanId) {
+                      props.onDeleteTagihan(confirmDeleteTagihanId);
+                      setConfirmDeleteTagihanId(null);
+                    }
+                  }}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-red-200 transition active:scale-95 cursor-pointer"
+                >
+                  Ya, Hapus
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE MEMBER CONFIRMATION MODAL */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="h-8 w-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-black text-slate-800 mb-2">Konfirmasi Hapus Anggota</h3>
+              <p className="text-xs text-slate-500 leading-relaxed mb-6">
+                Apakah Anda yakin ingin menghapus data anggota <span className="font-bold text-red-600">{props.anggotaData.find(a => a.id === confirmDeleteId)?.nama}</span>? 
+                Seluruh riwayat tagihan dan profil akan dihapus secara permanen dari basis data.
+              </p>
+              
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteId(null)}
+                  className="flex-1 py-3 text-xs text-gray-500 font-bold uppercase tracking-wider rounded-xl hover:bg-gray-50 transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirmDeleteId) {
+                      props.onDeleteAnggota(confirmDeleteId);
+                      setConfirmDeleteId(null);
+                    }
+                  }}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-red-200 transition active:scale-95 cursor-pointer"
+                >
+                  Ya, Hapus Permanen
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK DEPOSIT MODAL */}
+      {isDepositModalOpen && depositAnggota && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-emerald-600 px-5 py-4 text-white flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <div className="bg-white/20 p-1.5 rounded-lg">
+                  <DollarSign className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm leading-tight text-left">Setoran Tunai Simpanan</h3>
+                  <p className="text-[10px] text-emerald-100 uppercase font-black tracking-wider text-left">Input Jurnal Otomatis</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsDepositModalOpen(false)}
+                className="text-white hover:text-emerald-100 transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSubmitDeposit} className="p-6 space-y-4 text-left">
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold shrink-0">
+                  {depositAnggota.nama[0]}
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider leading-none mb-1">Anggota Penabung</p>
+                  <p className="text-sm font-black text-slate-800 leading-tight">{depositAnggota.nama}</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Jenis Simpanan</label>
+                  <select
+                    className="w-full px-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-emerald-500 font-bold text-slate-700"
+                    value={depositType}
+                    onChange={(e) => setDepositType(e.target.value)}
+                  >
+                    <option value="3-3200">Simpanan Wajib (Rutin)</option>
+                    <option value="3-3100">Simpanan Pokok (Bergabung)</option>
+                    <option value="3-3300">Simpanan Sukarela (Tabungan)</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Jumlah Setoran (Rp)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-gray-400 font-bold text-xs">Rp</span>
+                    <input
+                      type="number"
+                      required
+                      min="1000"
+                      className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-emerald-500 font-black font-mono text-slate-800"
+                      value={depositAmount}
+                      onChange={(e) => setDepositAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tanggal Setor</label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full px-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-emerald-500 font-medium text-slate-700"
+                    value={depositDate}
+                    onChange={(e) => setDepositDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Catatan (Opsional)</label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Setoran bulan Juni 2024"
+                    className="w-full px-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-emerald-500 font-medium text-slate-700"
+                    value={depositNote}
+                    onChange={(e) => setDepositNote(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsDepositModalOpen(false)}
+                  className="flex-1 py-3 text-xs text-gray-500 font-bold uppercase tracking-wider rounded-xl hover:bg-gray-50 transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-emerald-200 transition active:scale-95 cursor-pointer"
+                >
+                  Simpan Setoran
                 </button>
               </div>
             </form>
@@ -1295,39 +1673,183 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
         </div>
       )}
 
-      {/* MEMBER QR-ID CARD PREVIEW MODAL */}
+      {/* BILL PRINT MODAL (SINGLE OR BULK) */}
+      {(selectedPrintBill || selectedBillsForBulkPrint.length > 0) && (
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-[60] flex flex-col items-center justify-center p-4 no-print animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full flex flex-col items-center animate-in zoom-in-95 duration-150 overflow-hidden">
+            <div className="w-full flex items-center justify-between pb-3 border-b mb-4">
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">
+                {selectedPrintBill ? "Preview Lembar Tagihan" : `Preview Cetak Massal (${selectedBillsForBulkPrint.length})`}
+              </h3>
+              <button 
+                onClick={() => {
+                  setSelectedPrintBill(null);
+                  setSelectedBillsForBulkPrint([]);
+                }}
+                className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <style dangerouslySetInnerHTML={{__html: `
+              @media print {
+                body * { visibility: hidden; }
+                #print-area-wrapper, #print-area-wrapper * { visibility: visible; }
+                #print-area-wrapper {
+                  position: absolute;
+                  left: 0;
+                  top: 0;
+                  width: 100%;
+                  margin: 0;
+                  padding: 0;
+                  background: white;
+                }
+                .bill-page {
+                  page-break-after: always;
+                  height: 100vh;
+                  padding: 40px;
+                  box-sizing: border-box;
+                }
+                .bill-card-print {
+                  border: 2px dashed #e2e8f0 !important;
+                  padding: 30px !important;
+                }
+              }
+            `}} />
+
+            <div className="w-full max-h-[60vh] overflow-y-auto mb-4 p-2 space-y-4">
+              <div id="print-area-wrapper" className="w-full">
+                {(selectedPrintBill ? [selectedPrintBill] : selectedBillsForBulkPrint).map((bill, idx) => (
+                  <div key={bill.id} className={`bill-page ${idx > 0 ? "mt-8 no-print" : ""}`}>
+                    <div className="bill-card-print bg-white w-full border border-slate-100 p-6 rounded-xl shadow-sm text-left text-slate-900 border-dashed relative overflow-hidden">
+                      {/* Watermark for Unpaid */}
+                      {bill.status !== "Lunas" && (
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-45 opacity-[0.03] select-none pointer-events-none">
+                          <span className="text-8xl font-black whitespace-nowrap">BELUM BAYAR</span>
+                        </div>
+                      )}
+
+                      {/* Header */}
+                      <div className="flex items-center gap-3 border-b-2 border-red-600 pb-3 mb-4">
+                        <div className="h-10 w-10 bg-red-600 rounded flex items-center justify-center text-white shrink-0 font-black text-lg">K</div>
+                        <div className="min-w-0">
+                          <h1 className="text-xs font-black text-red-600 uppercase tracking-tight truncate leading-tight">
+                            {props.koperasiName || "Financial System"}
+                          </h1>
+                          <p className="text-[9px] text-slate-400 font-medium leading-tight">Sistem Administrasi Koperasi & Keuangan</p>
+                        </div>
+                      </div>
+
+                      {/* Title */}
+                      <div className="bg-slate-50 text-center py-1 rounded border border-slate-100 mb-4 flex justify-center items-center gap-2">
+                        <span className="text-[8px] font-black tracking-widest text-slate-500 uppercase">LEMBAR TAGIHAN / INVOICE RESMI</span>
+                        {bill.status === "Lunas" && (
+                          <span className="bg-emerald-500 text-white text-[7px] px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">LUNAS</span>
+                        )}
+                      </div>
+
+                      {/* Info Grid */}
+                      <div className="space-y-2 text-[10px]">
+                        <div className="flex justify-between border-b border-slate-50 pb-1">
+                          <span className="text-slate-400 font-bold uppercase text-[8px]">ID Invoice</span>
+                          <span className="font-mono font-bold">{bill.id}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-50 pb-1">
+                          <span className="text-slate-400 font-bold uppercase text-[8px]">Diterbitkan Untuk</span>
+                           <div className="text-right">
+                            <div className="font-bold">{bill.anggotaNama}</div>
+                            <div className="text-[8px] text-slate-400 font-mono">ID Member: {bill.anggotaId}</div>
+                          </div>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-50 pb-1">
+                          <span className="text-slate-400 font-bold uppercase text-[8px]">Tanggal Terbit</span>
+                          <span className="font-medium">{bill.tglTagihan}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-slate-50 pb-1">
+                          <span className="text-slate-400 font-bold uppercase text-[8px]">Kategori Pembayaran</span>
+                          <span className="font-bold text-red-600">{bill.kategori}</span>
+                        </div>
+                      </div>
+
+                      {/* Description */}
+                      <div className="mt-4 p-3 bg-slate-50/50 rounded-lg border border-slate-100 min-h-[60px]">
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Rincian Tagihan:</span>
+                        <p className="text-[10px] leading-relaxed italic text-slate-700">{bill.keterangan || "Tagihan rutin bulanan/iuran wajib keanggotaan."}</p>
+                      </div>
+
+                      {/* Amount Section */}
+                      <div className="mt-4 flex justify-between items-center py-2.5 border-t-2 border-slate-100">
+                        <span className="text-[11px] font-black text-slate-900 uppercase">Jumlah Harus Dibayarkan:</span>
+                        <span className="text-xl font-black text-red-600 font-mono">Rp{bill.jumlah.toLocaleString('id-ID')}</span>
+                      </div>
+
+                      {/* Bottom Info (QR + Signature) */}
+                      <div className="mt-6 flex gap-4 items-end">
+                        {/* QR Placeholder */}
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="h-16 w-16 border-2 border-slate-200 rounded-lg p-1 bg-white flex items-center justify-center text-slate-300">
+                            <QrCode className="h-12 w-12" strokeWidth={1} />
+                          </div>
+                          <span className="text-[6px] font-mono text-gray-400 uppercase">Verifikasi Sistem</span>
+                        </div>
+
+                        {/* Payment Instructions */}
+                        <div className="flex-1 bg-blue-50/50 border border-blue-100 rounded-lg p-2">
+                          <span className="text-[7px] font-black text-blue-900 uppercase mb-1 block underline decoration-blue-200">Metode Pembayaran:</span>
+                          <div className="text-[8px] text-blue-800 space-y-0.5 font-medium">
+                            <p>• Transfer: Bank BNI - 0123456789</p>
+                            <p>• Atas Nama: Koperasi Berdikari Utama</p>
+                            <p>• Atau Bayar Tunai di Kantor Kasir</p>
+                          </div>
+                        </div>
+
+                        {/* Signatures */}
+                        <div className="w-1/3 text-center text-[8px]">
+                          <p className="text-slate-400 uppercase font-black mb-10">Bendehara Koperasi,</p>
+                          <div className="border-t border-slate-200 pt-1 font-bold font-mono text-slate-800">( Petugas Keuangan )</div>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-4 text-center text-[7px] text-slate-300 font-mono italic">
+                        Dicetak secara otomatis oleh {props.koperasiName} SaaS Portal pada {new Date().toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button 
+              onClick={() => {
+                window.print();
+                if (selectedBillsForBulkPrint.length > 0) {
+                  setBulkSelection([]);
+                  setSelectedBillsForBulkPrint([]);
+                }
+              }}
+              className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-black text-[10px] uppercase tracking-widest rounded-xl shadow-lg shadow-red-200 transition active:scale-95 flex items-center justify-center gap-2"
+            >
+              <Printer className="h-4 w-4" /> 
+              {selectedPrintBill ? "Cetak Lembar Sekarang" : "Cetak Massal Sekarang"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MEMBER DETAIL & QR-ID CARD PREVIEW MODAL */}
       {selectedIdCardMember && (
         <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4 no-print animate-in fade-in duration-200">
           
-          {/* Print Friendly CSS hacks */}
-          <style dangerouslySetInnerHTML={{__html: `
-            @media print {
-              body * {
-                visibility: hidden;
-              }
-              #member-id-card-print-area, #member-id-card-print-area * {
-                visibility: visible;
-              }
-              #member-id-card-print-area {
-                position: absolute;
-                left: 50%;
-                top: 50%;
-                transform: translate(-50%, -50%) scale(1.4);
-                border: none !important;
-                box-shadow: none !important;
-              }
-            }
-          `}} />
-
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl max-w-md w-full text-center flex flex-col items-center animate-in zoom-in-95 duration-150">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl max-w-lg w-full text-center flex flex-col items-center animate-in zoom-in-95 duration-150 max-h-[95vh] overflow-hidden">
             
             {/* Modal Header Controls */}
-            <div className="w-full flex items-center justify-between pb-4 border-b border-slate-800 mb-6">
+            <div className="w-full flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
               <div className="flex items-center gap-2 text-left">
                 <ShieldCheck className="h-5 w-5 text-emerald-500 animate-pulse" />
                 <div>
-                  <h3 className="text-xs font-black text-white uppercase tracking-tight">Kartu Anggota QR Digital</h3>
-                  <p className="text-[10px] text-slate-400 font-mono">ID Kepesertaan Koperasi Desa</p>
+                  <h3 className="text-xs font-black text-white uppercase tracking-tight">Detail Keanggotaan Terverifikasi</h3>
+                  <p className="text-[10px] text-slate-400 font-mono">Dikelola oleh Database Digital {props.koperasiName}</p>
                 </div>
               </div>
               <button
@@ -1342,146 +1864,274 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
               </button>
             </div>
 
-            {/* Flipped Card Component */}
-            <div id="member-id-card-print-area" className="w-[305px] h-[450px] [perspective:1000px] mb-6">
-              <div 
-                className={`relative w-full h-full transition-transform duration-700 [transform-style:preserve-3d] ${
-                  isCardFlipped ? '[transform:rotateY(180deg)]' : ''
+            {/* Sub-tabs for Detail View */}
+            <div className="flex w-full bg-slate-950/50 p-1 rounded-xl mb-6 border border-slate-800 shrink-0">
+              <button
+                onClick={() => setDetailTab("card")}
+                className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition ${
+                  detailTab === "card" 
+                    ? "bg-slate-800 text-white shadow-sm" 
+                    : "text-slate-500 hover:text-slate-300"
                 }`}
               >
-                {/* ID-CARD FRONT SIDE */}
-                <div className="absolute w-full h-full rounded-2xl [backface-visibility:hidden] border border-slate-200 overflow-hidden shadow-2xl bg-white flex flex-col justify-between py-6 px-4 text-slate-950 select-none">
-                  {/* Red and White Stripe Banner */}
-                  <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-r from-red-650 via-rose-500 to-white flex items-center px-4">
-                    <span className="text-[7px] font-black text-white/90 tracking-widest leading-none font-mono uppercase">KOPERASI INDONESIA</span>
-                  </div>
-                  
-                  {/* Card Corporate Brand */}
-                  <div className="mt-2 text-center">
-                    <p className="text-[9px] font-extrabold text-red-650 tracking-[0.2em] uppercase font-mono leading-none">Kartu Anggota Resmi</p>
-                    <h2 className="text-xs font-black text-slate-900 tracking-tight leading-tight uppercase mt-1">
-                      {props.koperasiName || "Koperasi Desa Merah Putih"}
-                    </h2>
-                    <p className="text-[7px] text-slate-400 font-mono mt-0.5 uppercase tracking-wide">Desa Mandiri Keuangan Digital</p>
-                    <div className="w-12 h-[1px] bg-red-600 mx-auto mt-2"></div>
-                  </div>
+                Kartu Anggota
+              </button>
+              <button
+                onClick={() => setDetailTab("savings")}
+                className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition ${
+                  detailTab === "savings" 
+                    ? "bg-slate-800 text-white shadow-sm" 
+                    : "text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                Riwayat Simpanan
+              </button>
+            </div>
 
-                  {/* Profile Frame with active indicator */}
-                  <div className="my-2 flex flex-col items-center">
-                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-red-50 to-slate-100 border-2 border-red-500/30 p-1 shadow-sm relative flex items-center justify-center overflow-hidden">
-                      <div className="w-full h-full bg-slate-900 rounded-xl flex items-center justify-center text-white relative">
-                        {selectedIdCardMember.foto ? (
-                          <img 
-                            src={selectedIdCardMember.foto} 
-                            alt={selectedIdCardMember.nama} 
-                            className="w-full h-full object-cover rounded-xl"
+            {detailTab === "card" ? (
+              <div className="overflow-y-auto w-full flex flex-col items-center pb-2">
+                {/* Print Friendly CSS hacks */}
+                <style dangerouslySetInnerHTML={{__html: `
+                  @media print {
+                    body * {
+                      visibility: hidden;
+                    }
+                    #member-id-card-print-area, #member-id-card-print-area * {
+                      visibility: visible;
+                    }
+                    #member-id-card-print-area {
+                      position: absolute;
+                      left: 50%;
+                      top: 50%;
+                      transform: translate(-50%, -50%) scale(1.4);
+                      border: none !important;
+                      box-shadow: none !important;
+                    }
+                  }
+                `}} />
+
+                {/* Flipped Card Component */}
+                <div id="member-id-card-print-area" className="w-[305px] h-[450px] [perspective:1000px] mb-6 shrink-0">
+                  <div 
+                    className={`relative w-full h-full transition-transform duration-700 [transform-style:preserve-3d] ${
+                      isCardFlipped ? '[transform:rotateY(180deg)]' : ''
+                    }`}
+                  >
+                    {/* ID-CARD FRONT SIDE */}
+                    <div className="absolute w-full h-full rounded-2xl [backface-visibility:hidden] border border-slate-200 overflow-hidden shadow-2xl bg-white flex flex-col justify-between py-6 px-4 text-slate-950 select-none text-left">
+                      {/* Red and White Stripe Banner */}
+                      <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-r from-red-650 via-rose-500 to-white flex items-center px-4">
+                        <span className="text-[7px] font-black text-white/90 tracking-widest leading-none font-mono uppercase">KOPERASI INDONESIA</span>
+                      </div>
+                      
+                      {/* Card Corporate Brand */}
+                      <div className="mt-2 text-center">
+                        <p className="text-[9px] font-extrabold text-red-650 tracking-[0.2em] uppercase font-mono leading-none">Kartu Anggota Resmi</p>
+                        <h2 className="text-xs font-black text-slate-900 tracking-tight leading-tight uppercase mt-1">
+                          {props.koperasiName || "Koperasi Desa Merah Putih"}
+                        </h2>
+                        <p className="text-[7px] text-slate-400 font-mono mt-0.5 uppercase tracking-wide">Desa Mandiri Keuangan Digital</p>
+                        <div className="w-12 h-[1px] bg-red-600 mx-auto mt-2"></div>
+                      </div>
+
+                      {/* Profile Frame with active indicator */}
+                      <div className="my-2 flex flex-col items-center">
+                        <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-red-50 to-slate-100 border-2 border-red-500/30 p-1 shadow-sm relative flex items-center justify-center overflow-hidden">
+                          <div className="w-full h-full bg-slate-900 rounded-xl flex items-center justify-center text-white relative">
+                            {selectedIdCardMember.foto ? (
+                              <img 
+                                src={selectedIdCardMember.foto} 
+                                alt={selectedIdCardMember.nama} 
+                                className="w-full h-full object-cover rounded-xl"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <>
+                                <Users className="h-10 w-10 text-slate-400/80" />
+                                
+                                {/* Dynamic initials */}
+                                <span className="absolute inset-0 flex items-center justify-center text-xl font-black text-white opacity-10 uppercase tracking-widest font-sans">
+                                  {selectedIdCardMember.nama.slice(0, 2)}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          
+                          {/* Authentic stamp ribbon */}
+                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-white text-[8px] text-white font-extrabold" title="Status Keanggotaan Aktif">
+                            ✓
+                          </div>
+                        </div>
+
+                        <div className="text-center mt-2.5 space-y-1">
+                          <h4 className="text-sm font-black text-slate-900 leading-tight tracking-tight uppercase px-1">{selectedIdCardMember.nama}</h4>
+                          <p className="text-[10px] font-extrabold text-red-650 font-sans tracking-wide leading-none">Anggota {selectedIdCardMember.tipe || "Biasa"}</p>
+                          
+                          <div className="inline-flex mt-1.5 px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-[8px] font-bold text-slate-500 font-mono tracking-widest uppercase">
+                            ID: {selectedIdCardMember.id}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Decorative stamp seal / hologram details */}
+                      <div className="border-t border-dashed border-slate-200 pt-3 flex items-center justify-between text-left">
+                        <div className="flex items-center gap-1">
+                          <div className="w-6 h-6 rounded-full bg-slate-100 border border-red-500/40 flex items-center justify-center shrink-0">
+                            <ShieldCheck className="h-3.5 w-3.5 text-red-600" />
+                          </div>
+                          <div className="text-[7px] leading-tight shrink-0">
+                            <p className="font-extrabold text-slate-900 font-mono uppercase tracking-tighter">KEANGGOTAAN SAH</p>
+                            <p className="text-[6px] text-slate-400 font-mono font-medium">DocRef: {props.koperasiId || "KDMP"}-{selectedIdCardMember.id}</p>
+                          </div>
+                        </div>
+                        
+                        <div className="text-right text-[7px] leading-tight max-w-[128px]">
+                          <p className="font-extrabold text-slate-400 tracking-tighter uppercase">Authorized Signature</p>
+                          <p className="font-black text-slate-800 underline uppercase mt-2">M. Salim Priadi</p>
+                          <p className="text-[6px] text-slate-400 font-medium">Ketua Umum Koperasi</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ID-CARD BACK SIDE */}
+                    <div className="absolute w-full h-full rounded-2xl [backface-visibility:hidden] [transform:rotateY(180deg)] border border-red-650 overflow-hidden shadow-2xl bg-gradient-to-b from-slate-950 to-slate-900 flex flex-col justify-between py-6 px-4 text-white text-center select-none text-left">
+                      <div className="text-center space-y-1">
+                        <h3 className="text-[10px] font-black text-red-500 uppercase tracking-[0.2em] font-mono leading-none text-center">Keamanan &amp; Verifikasi Digital</h3>
+                        <p className="text-[8px] text-slate-400 font-sans tracking-wide font-medium text-center">Pindai QR ini untuk konfirmasi status keanggotaan warga</p>
+                        <div className="w-12 h-[1px] bg-red-600 mx-auto my-1.5 animate-pulse"></div>
+                      </div>
+
+                      {/* QR Core Element */}
+                      <div className="my-3 flex flex-col items-center">
+                        <div className="p-2.5 bg-white rounded-xl border border-slate-800 inline-block shadow-lg">
+                          <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&color=991b1b&data=${encodeURIComponent(
+                              `${window.location.origin}/?verify_id=${selectedIdCardMember.id}&verify_name=${encodeURIComponent(selectedIdCardMember.nama)}&verify_role=Anggota%20${encodeURIComponent(selectedIdCardMember.tipe || 'Biasa')}&verify_status=Aktif`
+                            )}`}
+                            alt="QR ID Verifikator"
+                            className="w-36 h-36 object-contain"
                             referrerPolicy="no-referrer"
                           />
-                        ) : (
-                          <>
-                            <Users className="h-10 w-10 text-slate-400/80" />
-                            
-                            {/* Dynamic initials */}
-                            <span className="absolute inset-0 flex items-center justify-center text-xl font-black text-white opacity-10 uppercase tracking-widest font-sans">
-                              {selectedIdCardMember.nama.slice(0, 2)}
-                            </span>
-                          </>
-                        )}
+                        </div>
+                        <p className="text-[8px] font-mono text-red-400 font-bold tracking-widest uppercase mt-2.5 text-center">
+                          QR CODE AUTH SECURE
+                        </p>
                       </div>
-                      
-                      {/* Authentic stamp ribbon */}
-                      <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-white text-[8px] text-white font-extrabold" title="Status Keanggotaan Aktif">
-                        ✓
-                      </div>
-                    </div>
 
-                    <div className="text-center mt-2.5 space-y-1">
-                      <h4 className="text-sm font-black text-slate-900 leading-tight tracking-tight uppercase px-1">{selectedIdCardMember.nama}</h4>
-                      <p className="text-[10px] font-extrabold text-red-650 font-sans tracking-wide leading-none">Anggota {selectedIdCardMember.tipe || "Biasa"}</p>
-                      
-                      <div className="inline-flex mt-1.5 px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-[8px] font-bold text-slate-500 font-mono tracking-widest uppercase">
-                        ID: {selectedIdCardMember.id}
+                      {/* Operational Notes */}
+                      <div className="text-left text-[7px] leading-relaxed text-slate-400 border-t border-slate-800/80 pt-2.5 space-y-1">
+                        <p className="text-[8px] font-extrabold text-slate-200 mb-1 leading-none uppercase font-mono">Panduan Penggunaan</p>
+                        <p>1. Kartu ini merupakan tanda pengenal resmi Anggota ${props.koperasiName || "Financial System"}.</p>
+                        <p>2. Silakan melakukan pemindaian QR Code di atas menggunakan ponsel untuk validasi keaslian kepesertaan secara real-time di server database desa.</p>
+                        <p>3. Dilarang menyalahgunakan kartu ini untuk transaksi ilegal desa.</p>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Decorative stamp seal / hologram details */}
-                  <div className="border-t border-dashed border-slate-200 pt-3 flex items-center justify-between text-left">
-                    <div className="flex items-center gap-1">
-                      <div className="w-6 h-6 rounded-full bg-slate-100 border border-red-500/40 flex items-center justify-center shrink-0">
-                        <ShieldCheck className="h-3.5 w-3.5 text-red-600" />
-                      </div>
-                      <div className="text-[7px] leading-tight shrink-0">
-                        <p className="font-extrabold text-slate-900 font-mono uppercase tracking-tighter">KEANGGOTAAN SAH</p>
-                        <p className="text-[6px] text-slate-400 font-mono font-medium">DocRef: {props.koperasiId || "KDMP"}-{selectedIdCardMember.id}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="text-right text-[7px] leading-tight max-w-32">
-                      <p className="font-extrabold text-slate-400 tracking-tighter uppercase">Authorized Signature</p>
-                      <p className="font-black text-slate-800 underline uppercase mt-2">M. Salim Priadi</p>
-                      <p className="text-[6px] text-slate-400 font-medium">Ketua Umum Koperasi</p>
                     </div>
                   </div>
                 </div>
 
-                {/* ID-CARD BACK SIDE */}
-                <div className="absolute w-full h-full rounded-2xl [backface-visibility:hidden] [transform:rotateY(180deg)] border border-red-650 overflow-hidden shadow-2xl bg-gradient-to-b from-slate-950 to-slate-900 flex flex-col justify-between py-6 px-4 text-white text-center select-none">
-                  <div className="text-center space-y-1">
-                    <h3 className="text-[10px] font-black text-red-500 uppercase tracking-[0.2em] font-mono leading-none">Keamanan &amp; Verifikasi Digital</h3>
-                    <p className="text-[8px] text-slate-400 font-sans tracking-wide font-medium">Pindai QR ini untuk konfirmasi status keanggotaan warga</p>
-                    <div className="w-12 h-[1px] bg-red-600 mx-auto my-1.5 animate-pulse"></div>
-                  </div>
-
-                  {/* QR Core Element */}
-                  <div className="my-3 flex flex-col items-center">
-                    <div className="p-2.5 bg-white rounded-xl border border-slate-800 inline-block shadow-lg">
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&color=991b1b&data=${encodeURIComponent(
-                          `${window.location.origin}/?verify_id=${selectedIdCardMember.id}&verify_name=${encodeURIComponent(selectedIdCardMember.nama)}&verify_role=Anggota%20${encodeURIComponent(selectedIdCardMember.tipe || 'Biasa')}&verify_status=Aktif`
-                        )}`}
-                        alt="QR ID Verifikator"
-                        className="w-36 h-36 object-contain"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                    <p className="text-[8px] font-mono text-red-400 font-bold tracking-widest uppercase mt-2.5">
-                      QR CODE AUTH SECURE
-                    </p>
-                  </div>
-
-                  {/* Operational Notes */}
-                  <div className="text-left text-[7px] leading-relaxed text-slate-400 border-t border-slate-800/80 pt-2.5 space-y-1">
-                    <p className="text-[8px] font-extrabold text-slate-200 mb-1 leading-none uppercase font-mono">Panduan Penggunaan</p>
-                    <p>1. Kartu ini merupakan tanda pengenal resmi Anggota ${props.koperasiName || "Financial System"}.</p>
-                    <p>2. Silakan melakukan pemindaian QR Code di atas menggunakan ponsel untuk validasi keaslian kepesertaan secara real-time di server database desa.</p>
-                    <p>3. Dilarang menyalahgunakan kartu ini untuk transaksi ilegal desa.</p>
-                  </div>
+                {/* Card Actions */}
+                <div className="w-full grid grid-cols-2 gap-3.5 mt-2 px-6">
+                  <button
+                    type="button"
+                    onClick={() => setIsCardFlipped(!isCardFlipped)}
+                    className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[10px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowLeftRight className="h-3.5 w-3.5" /> Balik Kartu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="w-full py-2.5 bg-red-650 hover:bg-red-700 text-white font-extrabold text-[10px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Printer className="h-3.5 w-3.5" /> Cetak Kartu
+                  </button>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="w-full flex-1 overflow-y-auto custom-scrollbar px-2">
+                <div className="text-left mb-4">
+                  <h4 className="text-white text-xs font-black uppercase tracking-wider mb-1">Riwayat Setoran Simpanan</h4>
+                  <p className="text-slate-400 text-[10px]">Data histori ditarik otomatis dari buku jurnal umum anggota <strong>{selectedIdCardMember.nama}</strong></p>
+                </div>
 
-            {/* Modal Bottom Actions */}
-            <div className="w-full grid grid-cols-2 gap-3.5 mt-2">
-              <button
-                type="button"
-                onClick={() => setIsCardFlipped(!isCardFlipped)}
-                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[10px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <ArrowLeftRight className="h-3.5 w-3.5" /> Balik Kartu
-              </button>
-              
-              <button
-                type="button"
-                onClick={() => {
-                  window.print();
-                }}
-                className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-extrabold text-[10px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-red-500/10"
-              >
-                <Printer className="h-3.5 w-3.5" /> Cetak Kartu
-              </button>
-            </div>
+                <div className="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden shadow-inner">
+                  <table className="w-full text-left text-[10px]">
+                    <thead className="bg-slate-900 text-slate-500 font-black uppercase tracking-wider border-b border-slate-800">
+                      <tr>
+                        <th className="py-3 px-3">Tanggal</th>
+                        <th className="py-3 px-3 italic">Referensi/Ket</th>
+                        <th className="py-3 px-3 text-right">Nominal (Rp)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50">
+                      {(() => {
+                        const savingsCodes = ["3-3000", "3-3100", "3-3200", "3-3300"]; // COA codes related to member savings
+                        const memberHistory = (props.jurnalData || []).filter(j => 
+                          (j.ket.toLowerCase().includes(selectedIdCardMember.nama.toLowerCase()) || 
+                           j.ket.toLowerCase().includes(selectedIdCardMember.id.toLowerCase())) &&
+                          savingsCodes.some(code => j.akun.startsWith(code) || j.ket.toLowerCase().includes("simpanan"))
+                        );
 
+                        const totalSimpanan = memberHistory.reduce((sum, j) => sum + (j.kredit || j.debet), 0);
+
+                        if (memberHistory.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={3} className="py-12 text-center text-slate-600 font-medium italic">
+                                Belum ada record simpanan di buku jurnal desa.
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return (
+                          <>
+                            {memberHistory.map(j => (
+                              <tr key={j.id} className="hover:bg-slate-900/50 transition-colors">
+                                <td className="py-3 px-3 text-slate-300 font-mono">{j.tgl}</td>
+                                <td className="py-3 px-3">
+                                  <p className="text-slate-200 font-bold leading-tight">{j.ket}</p>
+                                  <p className="text-slate-500 text-[8px] mt-0.5 uppercase tracking-tighter">REF: {j.no}</p>
+                                </td>
+                                <td className="py-3 px-3 text-right text-emerald-400 font-black font-mono">
+                                  + Rp {(j.kredit || j.debet).toLocaleString('id-ID')}
+                                </td>
+                              </tr>
+                            ))}
+                            {/* Calculation Row for better summary inside table */}
+                            <tr className="bg-emerald-500/5">
+                              <td colSpan={2} className="py-3 px-3 text-right text-[9px] font-black text-emerald-500 uppercase tracking-widest">Akumulasi Saldo Tabungan</td>
+                              <td className="py-3 px-3 text-right text-emerald-400 font-black font-mono border-l border-emerald-500/20">
+                                Rp {totalSimpanan.toLocaleString('id-ID')}
+                              </td>
+                            </tr>
+                          </>
+                        );
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Additional Summary Info */}
+                <div className="mt-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-between">
+                  <div>
+                    <p className="text-emerald-500 text-[10px] uppercase font-black tracking-widest leading-none mb-1">Total Simpanan Terverifikasi</p>
+                    <p className="text-emerald-400 text-lg font-black font-mono">
+                      Rp {(() => {
+                        const savingsCodes = ["3-3000", "3-3100", "3-3200", "3-3300"];
+                        const memberHistory = (props.jurnalData || []).filter(j => 
+                          (j.ket.toLowerCase().includes(selectedIdCardMember.nama.toLowerCase()) || 
+                           j.ket.toLowerCase().includes(selectedIdCardMember.id.toLowerCase())) &&
+                          savingsCodes.some(code => j.akun.startsWith(code) || j.ket.toLowerCase().includes("simpanan"))
+                        );
+                        return memberHistory.reduce((sum, j) => sum + (j.kredit || j.debet), 0).toLocaleString('id-ID');
+                      })()}
+                    </p>
+                  </div>
+                  <PlusCircle className="h-6 w-6 text-emerald-500 opacity-50" />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

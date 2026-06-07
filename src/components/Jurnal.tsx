@@ -34,6 +34,10 @@ export function Jurnal(props: JurnalProps) {
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Date Range Filter State
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
   // Automatically reset errorMsg when modal is toggled
   React.useEffect(() => {
     setErrorMsg("");
@@ -155,10 +159,16 @@ export function Jurnal(props: JurnalProps) {
   const filteredJurnal = props.jurnalData.filter(j => {
     const q = searchQuery.toLowerCase();
     const label = getAccountLabel(j.akun).toLowerCase();
-    return j.no.toLowerCase().includes(q) || 
+    
+    const matchesSearch = j.no.toLowerCase().includes(q) || 
            j.ket.toLowerCase().includes(q) || 
            j.tgl.includes(q) ||
            label.includes(q);
+
+    const matchesDate = (!startDate || j.tgl >= startDate) && 
+                       (!endDate || j.tgl <= endDate);
+
+    return matchesSearch && matchesDate;
   });
 
   const totalDebet = entries.reduce((sum, e) => sum + e.debet, 0);
@@ -204,35 +214,79 @@ export function Jurnal(props: JurnalProps) {
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden mb-6">
         {/* Search bar & statistics info */}
-        <div className="p-4 border-b border-gray-50 bg-gray-50/50 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-            <input
-              id="search-jurnal"
-              type="text"
-              placeholder="Cari No. Bukti, Keterangan, atau Akun..."
-              className="w-full pl-9 pr-10 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-red-500"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery("");
+        <div className="p-4 border-b border-gray-50 bg-gray-50/50 flex flex-col lg:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+              <input
+                id="search-jurnal"
+                type="text"
+                placeholder="Cari No. Bukti, Ket, atau Akun..."
+                className="w-full pl-9 pr-10 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-red-500"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="absolute right-3 top-2 text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
-                title="Bersihkan filter"
-              >
-                &times;
-              </button>
-            )}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setCurrentPage(1);
+                  }}
+                  className="absolute right-3 top-2 text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
+                  title="Bersihkan filter pencarian"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:flex-none">
+                <input
+                  type="date"
+                  className="w-full sm:w-32 px-2.5 py-1.5 text-[10px] sm:text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-red-500 font-medium"
+                  value={startDate}
+                  title="Tanggal Mulai"
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                />
+              </div>
+              <span className="text-gray-400 font-bold text-[10px]">—</span>
+              <div className="relative flex-1 sm:flex-none">
+                <input
+                  type="date"
+                  className="w-full sm:w-32 px-2.5 py-1.5 text-[10px] sm:text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-red-500 font-medium"
+                  value={endDate}
+                  title="Tanggal Selesai"
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                />
+              </div>
+              {(startDate || endDate) && (
+                <button
+                  onClick={() => {
+                    setStartDate("");
+                    setEndDate("");
+                    setCurrentPage(1);
+                  }}
+                  className="text-xs text-red-600 font-bold hover:text-red-800 transition py-1 px-2 hover:bg-red-50 rounded"
+                  title="Reset Filter Tanggal"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
           </div>
-          <div className="text-xs text-gray-500 font-medium">
+          
+          <div className="text-xs text-gray-500 font-medium whitespace-nowrap bg-white px-3 py-1.5 rounded-full border border-gray-100 italic">
             Total Rekaman Jurnal: <span className="font-bold text-gray-800">{filteredJurnal.length}</span> baris
           </div>
         </div>
@@ -519,12 +573,12 @@ export function Jurnal(props: JurnalProps) {
                   disabled={!isBalance}
                   className={`flex-1 py-1.5 text-white text-xs font-semibold rounded transition text-center focus:outline-none ${
                     isBalance 
-                      ? "bg-red-600 hover:bg-red-700 active:scale-95 cursor-pointer shadow-md" 
+                      ? "bg-emerald-600 hover:bg-emerald-700 active:scale-95 cursor-pointer shadow-md" 
                       : "bg-gray-300 cursor-not-allowed opacity-60"
                   }`}
-                  title={isBalance ? "Lakukan penyimpanan entri jurnal" : "Pastikan total Debet dan Kredit harus seimbang"}
+                  title={isBalance ? "Simpan entri jurnal ini ke pembukuan" : "Total Debet dan Kredit harus seimbang dan lebih dari Rp 0 sebelum dapat disimpan"}
                 >
-                  Rekam Transaksi
+                  Simpan Transaksi Jurnal
                 </button>
               </div>
             </form>

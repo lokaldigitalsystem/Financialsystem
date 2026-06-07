@@ -62,7 +62,7 @@ export function StockOpname(props: StockOpnameProps) {
   
   // Outer form details
   const [tanggal, setTanggal] = useState(new Date().toISOString().split('T')[0]);
-  const [petugas, setPetugas] = useState("Komarudin (Staff)");
+  const [petugas, setPetugas] = useState("");
   const [catatan, setCatatan] = useState("Opname Bulanan Gudang");
   
   // Search filter
@@ -75,6 +75,15 @@ export function StockOpname(props: StockOpnameProps) {
 
   // History sessions loaded from localStorage
   const [sessions, setSessions] = useState<OpnameSession[]>([]);
+
+  // Confirmation Modal States
+  const [showConfirmOpname, setShowConfirmOpname] = useState<{
+    msg: string;
+    type: "match" | "diff";
+    adjustments: any[];
+    sessionItems: any[];
+  } | null>(null);
+  const [showConfirmDeleteSessionId, setShowConfirmDeleteSessionId] = useState<string | null>(null);
 
   // Initialize physical counts to match system quantities when stokData arrives
   useEffect(() => {
@@ -223,13 +232,23 @@ export function StockOpname(props: StockOpnameProps) {
     });
 
     if (adjustments.length === 0) {
-      const proceed = confirm("Semua stok diinput cocok sempurna dengan sistem (tidak ada selisih). Apakah Anda ingin menyimpan dokumen sesi opname ini saja?");
-      if (!proceed) return;
+      setShowConfirmOpname({
+        msg: "Semua stok diinput cocok sempurna dengan sistem (tidak ada selisih). Apakah Anda ingin menyimpan dokumen sesi opname ini saja?",
+        type: "match",
+        adjustments,
+        sessionItems
+      });
     } else {
-      const proceed = confirm(`Anda akan merubah stok fisik untuk ${adjustments.length} komoditas di gudang secara permanen.\nTotal Selisih Unit: ${netVarianceQty >= 0 ? '+' : ''}${netVarianceQty} Pcs\nNilai Penyesuaian: Rp ${netVarianceValue.toLocaleString('id-ID')}\n\nApakah data hasil pemeriksaan ini sudah benar?`);
-      if (!proceed) return;
+      setShowConfirmOpname({
+        msg: `Anda akan merubah stok fisik untuk ${adjustments.length} komoditas di gudang secara permanen.\nTotal Selisih Unit: ${netVarianceQty >= 0 ? '+' : ''}${netVarianceQty} Pcs\nNilai Penyesuaian: Rp ${netVarianceValue.toLocaleString('id-ID')}`,
+        type: "diff",
+        adjustments,
+        sessionItems
+      });
     }
+  };
 
+  const handleApplyOpname = (adjustments: any[], sessionItems: any[]) => {
     // Call state updater in app
     props.onBulkOpname(adjustments, tanggal, petugas);
 
@@ -250,14 +269,12 @@ export function StockOpname(props: StockOpnameProps) {
 
     // Reset notes/counts
     alert("Stock opname gudang berhasil diterapkan! Stok sistem telah dimutakhirkan secara riil.");
+    setShowConfirmOpname(null);
     setActiveTab("riwayat");
   };
 
   const handleDeleteSession = (id: string) => {
-    if (confirm("Apakah Anda yakin ingin menghapus catatan sejarah sesi opname ini dari log lokal? (Tindakan ini tidak membatalkan stok yang telah disesuaikan)")) {
-      const nextSessions = sessions.filter(s => s.id !== id);
-      saveSessionsToLocalStorage(nextSessions);
-    }
+    setShowConfirmDeleteSessionId(id);
   };
 
   const exportToCSV = () => {
@@ -312,6 +329,78 @@ export function StockOpname(props: StockOpnameProps) {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
+      {/* CONFIRMATION MODALS UPGRADED FROM BASIC CONFIRM() */}
+      {showConfirmOpname && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${showConfirmOpname.type === 'match' ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                <FileCheck className={`h-8 w-8 ${showConfirmOpname.type === 'match' ? 'text-emerald-600' : 'text-red-600'}`} />
+              </div>
+              <h3 className="text-lg font-black text-slate-800 mb-2">Finalisasi Stock Opname</h3>
+              <p className="text-xs text-slate-500 leading-relaxed mb-6 whitespace-pre-wrap">
+                {showConfirmOpname.msg}
+              </p>
+              
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmOpname(null)}
+                  className="flex-1 py-3 text-xs text-slate-500 font-bold uppercase tracking-wider rounded-xl hover:bg-slate-50 transition cursor-pointer border border-slate-200"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyOpname(showConfirmOpname.adjustments, showConfirmOpname.sessionItems)}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-red-200 transition active:scale-95 cursor-pointer"
+                >
+                  Ya, Simpan
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfirmDeleteSessionId && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="h-8 w-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-black text-slate-800 mb-2">Hapus Log Opname?</h3>
+              <p className="text-xs text-slate-500 leading-relaxed mb-6">
+                Apakah Anda yakin ingin menghapus catatan sejarah sesi opname ini? 
+                <br /><small className="text-red-500 font-bold">Catatan: Tindakan ini tidak akan membatalkan perubahan stok yang sudah dilakukan ke sistem.</small>
+              </p>
+              
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmDeleteSessionId(null)}
+                  className="flex-1 py-3 text-xs text-slate-500 font-bold uppercase tracking-wider rounded-xl hover:bg-slate-50 transition cursor-pointer border border-slate-200"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextSessions = sessions.filter(s => s.id !== showConfirmDeleteSessionId);
+                    saveSessionsToLocalStorage(nextSessions);
+                    setShowConfirmDeleteSessionId(null);
+                  }}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-red-200 transition active:scale-95 cursor-pointer"
+                >
+                  Hapus Log
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HEADER SECTION */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b pb-5 border-red-100">
         <div>
@@ -388,7 +477,7 @@ export function StockOpname(props: StockOpnameProps) {
                 </label>
                 <input
                   type="text"
-                  placeholder="Contoh: Komarudin (Staff Gudang)"
+                  placeholder="Nama (Jabatan)"
                   value={petugas}
                   onChange={(e) => setPetugas(e.target.value)}
                   className="px-3.5 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-red-500 font-semibold text-gray-800"
@@ -663,6 +752,7 @@ export function StockOpname(props: StockOpnameProps) {
                                   className="w-full px-2.5 py-1.5 text-xs border border-gray-150 rounded-lg focus:outline-none focus:border-red-500 text-gray-700 bg-white font-medium"
                                 >
                                   <option value="">-- Pilih Alasan --</option>
+                                  <option value="Terjual (Auto-Sale)">Terjual (Auto-Sale)</option>
                                   <option value="Sesuai fisik">Cocok Fisik</option>
                                   <option value="Barang Cacat / Rusak">Cacat/Rusak</option>
                                   <option value="Penyusutan Alami">Suhu/Susut</option>

@@ -666,8 +666,11 @@ export function Pengaturan({
 
   // Delete user account
   const handleDeleteUser = (username: string) => {
-    if (username === "SuperIT") {
-      setUserErrorMessage("Akun SuperIT (Pembuat System) tidak dapat dihapus!");
+    const targetUser = userAccounts.find(u => u.username === username);
+    const isOwnerEmail = targetUser?.email?.toLowerCase() === 'komarudink403@gmail.com';
+
+    if (username === "SuperIT" || isOwnerEmail) {
+      setUserErrorMessage("Akun Administrator Utama / Pemilik System tidak dapat dihapus demi keamanan!");
       return;
     }
     if (username === currentUsername) {
@@ -1107,7 +1110,16 @@ export function Pengaturan({
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                         {userAccounts
-                          .filter((user) => user.username !== "SuperIT" || currentUsername === "SuperIT")
+                          .filter((user) => {
+                            const isSuperIT = user.username === "SuperIT";
+                            const isMainOwnerEmail = user.email?.toLowerCase() === 'komarudink403@gmail.com';
+                            
+                            // If user is owner, show everything
+                            if (isOwnerEmail || currentUsername === "SuperIT") return true;
+                            
+                            // If user is NOT owner, hide SuperIT and owner emails
+                            return !isSuperIT && !isMainOwnerEmail;
+                          })
                           .map((user) => {
                             const isMainUser = user.username === "SuperIT";
                           const isLoginSelf = user.username === currentUsername;

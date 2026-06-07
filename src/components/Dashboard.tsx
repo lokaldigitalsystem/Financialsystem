@@ -4,7 +4,8 @@
  */
 
 import React from 'react';
-import { ArrowUpRight, ArrowDownRight, Wallet, Users, LayoutDashboard, ShoppingBag, Landmark, RefreshCw, Trash2, FileDown, Coins, Building, Target, Settings, Edit3, CheckCircle, TrendingUp, Sparkles, Calendar, AlertTriangle, Percent, Activity, ExternalLink, ShieldCheck, PhoneCall, HelpCircle } from 'lucide-react';
+import { motion } from 'motion/react';
+import { ArrowUpRight, ArrowDownRight, Wallet, Users, LayoutDashboard, ShoppingBag, Landmark, RefreshCw, Trash2, FileDown, Coins, Building, Target, Settings, Edit3, CheckCircle, TrendingUp, Sparkles, Calendar, AlertTriangle, Percent, Activity, ExternalLink, ShieldCheck, PhoneCall, HelpCircle, LifeBuoy, MessageSquare } from 'lucide-react';
 import { CoaAccount, JurnalEntry, Anggota, StokItem, Tagihan } from '../types';
 
 interface DashboardProps {
@@ -21,6 +22,29 @@ interface DashboardProps {
 export function Dashboard(props: DashboardProps) {
   const [showResetConfirm, setShowResetConfirm] = React.useState<"zero" | "demo" | null>(null);
   const [salesHistory, setSalesHistory] = React.useState<any[]>([]);
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.05
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        type: "spring",
+        stiffness: 100,
+        damping: 15
+      }
+    }
+  };
 
   const months = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni", 
@@ -47,17 +71,20 @@ export function Dashboard(props: DashboardProps) {
 
   // KPI Target Tracker state
   const [kpiTargetType, setKpiTargetType] = React.useState<'omset' | 'profit'>(() => {
-    return (localStorage.getItem('kdmp_kpiTargetType') as 'omset' | 'profit') || 'omset';
+    const key = props.koperasiId ? `kdmp_${props.koperasiId}_kpiTargetType` : 'kdmp_kpiTargetType';
+    return (localStorage.getItem(key) as 'omset' | 'profit') || 'omset';
   });
 
   const [kpiTargetOmset, setKpiTargetOmset] = React.useState<number>(() => {
-    const saved = localStorage.getItem('kdmp_kpiTargetOmset');
-    return saved ? parseInt(saved, 10) : 15000000;
+    const key = props.koperasiId ? `kdmp_${props.koperasiId}_kpiTargetOmset` : 'kdmp_kpiTargetOmset';
+    const saved = localStorage.getItem(key);
+    return saved ? parseInt(saved, 10) : 0; // Default to 0 for new tenants
   });
 
   const [kpiTargetProfit, setKpiTargetProfit] = React.useState<number>(() => {
-    const saved = localStorage.getItem('kdmp_kpiTargetProfit');
-    return saved ? parseInt(saved, 10) : 5000000;
+    const key = props.koperasiId ? `kdmp_${props.koperasiId}_kpiTargetProfit` : 'kdmp_kpiTargetProfit';
+    const saved = localStorage.getItem(key);
+    return saved ? parseInt(saved, 10) : 0; // Default to 0 for new tenants
   });
 
   const [isEditingKpi, setIsEditingKpi] = React.useState<boolean>(false);
@@ -182,7 +209,8 @@ export function Dashboard(props: DashboardProps) {
 
   const handleKpiTypeChange = (type: 'omset' | 'profit') => {
     setKpiTargetType(type);
-    localStorage.setItem('kdmp_kpiTargetType', type);
+    const key = props.koperasiId ? `kdmp_${props.koperasiId}_kpiTargetType` : 'kdmp_kpiTargetType';
+    localStorage.setItem(key, type);
   };
 
   const handleSaveKpiTarget = () => {
@@ -190,10 +218,12 @@ export function Dashboard(props: DashboardProps) {
     if (!isNaN(val) && val >= 0) {
       if (kpiTargetType === 'omset') {
         setKpiTargetOmset(val);
-        localStorage.setItem('kdmp_kpiTargetOmset', val.toString());
+        const key = props.koperasiId ? `kdmp_${props.koperasiId}_kpiTargetOmset` : 'kdmp_kpiTargetOmset';
+        localStorage.setItem(key, val.toString());
       } else {
         setKpiTargetProfit(val);
-        localStorage.setItem('kdmp_kpiTargetProfit', val.toString());
+        const key = props.koperasiId ? `kdmp_${props.koperasiId}_kpiTargetProfit` : 'kdmp_kpiTargetProfit';
+        localStorage.setItem(key, val.toString());
       }
       setIsEditingKpi(false);
     }
@@ -751,9 +781,15 @@ export function Dashboard(props: DashboardProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+      <motion.div 
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8"
+      >
         {/* SALDO KAS TUNAI */}
-        <div 
+        <motion.div 
+          variants={itemVariants}
           onClick={() => props.onNavigate('coa', undefined, 'Aset', 'Kas Tunai')}
           className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
           title="Klik untuk lihat detail Kas Tunai di COA"
@@ -777,10 +813,11 @@ export function Dashboard(props: DashboardProps) {
             </div>
           </div>
           <div className="h-1 bg-emerald-600 rounded-b-xl" />
-        </div>
+        </motion.div>
 
         {/* TOTAL SALDO BANK */}
-        <div 
+        <motion.div 
+          variants={itemVariants}
           onClick={() => props.onNavigate('coa', undefined, 'Aset', 'Bank')}
           className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
           title="Klik untuk lihat detail Rekening Bank di COA"
@@ -804,10 +841,11 @@ export function Dashboard(props: DashboardProps) {
             </div>
           </div>
           <div className="h-1 bg-blue-600 rounded-b-xl" />
-        </div>
+        </motion.div>
 
         {/* TOTAL ASET LANCAR */}
-        <div 
+        <motion.div 
+          variants={itemVariants}
           onClick={() => props.onNavigate('coa', undefined, 'Aset', '')}
           className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
           title="Klik untuk lihat Chart of Accounts (COA)"
@@ -831,10 +869,11 @@ export function Dashboard(props: DashboardProps) {
             </div>
           </div>
           <div className="h-1 bg-teal-600 rounded-b-xl" />
-        </div>
+        </motion.div>
 
         {/* TOTAL ASET TIDAK LANCAR */}
-        <div 
+        <motion.div 
+          variants={itemVariants}
           onClick={() => props.onNavigate('coa', undefined, 'Aset', 'Aset Tetap')}
           className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
           title="Klik untuk lihat detail Aset Tetap di COA"
@@ -858,10 +897,11 @@ export function Dashboard(props: DashboardProps) {
             </div>
           </div>
           <div className="h-1 bg-purple-600 rounded-b-xl" />
-        </div>
+        </motion.div>
 
         {/* TOTAL PENJUALAN */}
-        <div 
+        <motion.div 
+          variants={itemVariants}
           onClick={() => props.onNavigate('jurnal', '4-1001')}
           className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
           title="Klik untuk cari transaksi Penjualan (4-1001) di Jurnal"
@@ -885,10 +925,11 @@ export function Dashboard(props: DashboardProps) {
             </div>
           </div>
           <div className="h-1 bg-emerald-600 rounded-b-xl" />
-        </div>
+        </motion.div>
 
         {/* ANGGOTA AKTIF */}
-        <div 
+        <motion.div 
+          variants={itemVariants}
           onClick={() => props.onNavigate('anggota')}
           className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
           title="Klik untuk buka Daftar Anggota"
@@ -912,8 +953,8 @@ export function Dashboard(props: DashboardProps) {
             </div>
           </div>
           <div className="h-1 bg-amber-600 rounded-b-xl" />
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* DASHBOARD SUBMENU TABS */}
       <div className="flex border border-gray-100 mb-6 font-semibold overflow-x-auto gap-1.5 p-1 bg-slate-50 rounded-xl" id="submenu-tabs-navigation">
@@ -1790,87 +1831,53 @@ export function Dashboard(props: DashboardProps) {
           </div>
         </div>
 
-        {/* NOTICE PIUTANG JATUH TEMPO (lg:col-span-1) */}
-        <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b pb-4 mb-4">
-              <div>
-                <span className="text-[10px] uppercase font-black tracking-wider text-red-650 text-red-600">Peringatan Piutang (Alert Panel)</span>
-                <h3 className="text-sm font-extrabold text-slate-800">Tagihan Anggota Jatuh Tempo</h3>
-              </div>
-              <div className="p-2 bg-amber-50 text-amber-600 rounded-xl">
-                <AlertTriangle className="h-5 w-5 animate-bounce" />
-              </div>
-            </div>
-
-            {/* Total outstanding */}
-            <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-3 mb-4">
-              <span className="text-[9.5px] text-amber-800 font-bold uppercase tracking-wider block">Total Piutang Belum Bayar</span>
-              <span className="text-xl font-mono font-black text-amber-950 mt-0.5 block">
-                Rp {totalReceivablesValue.toLocaleString('id-ID')}
-              </span>
-              <p className="text-[10px] text-slate-500 mt-1 leading-normal">
-                Diperbaharui real-time dari data tagihan modul Simpan Pinjam / Pembelian pupuk anggota.
+        {/* INTEGRATED SUPPORT HUB / QUICK LINKS (Side Section) */}
+        <div className="flex flex-col gap-6">
+          <div className="bg-indigo-600 rounded-3xl p-6 shadow-xl shadow-indigo-200 flex flex-col justify-between overflow-hidden relative group min-h-[220px] text-left">
+            <LifeBuoy className="absolute -top-6 -right-6 h-32 w-32 text-indigo-500 opacity-20 rotate-12 transition-transform group-hover:rotate-45" />
+            
+            <div className="relative z-10">
+              <span className="text-[10px] font-black text-indigo-100 uppercase tracking-[0.2em]">Pusat Pengaduan</span>
+              <h3 className="text-xl font-black text-white leading-tight mt-1">Butuh Bantuan Teknis?</h3>
+              <p className="text-[11px] text-indigo-50 font-medium leading-relaxed mt-2 opacity-90">
+                Hubungi tim developer SaaS kami jika Anda menemukan eror sistem, kendala akuntansi, atau pertanyaan seputar billing cloud.
               </p>
             </div>
 
-            {/* Upcoming tagihan list */}
-            <div className="space-y-2.5 max-h-[190px] overflow-y-auto pr-1">
-              {unpaidInvoices.length === 0 ? (
-                <div className="text-center py-8 text-[11px] text-slate-500 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                  🎉 Semua tagihan lunas! Tidak ada piutang jatuh tempo.
-                </div>
-              ) : (
-                unpaidInvoices.slice(0, 4).map((tagihan, idx) => {
-                  let alertBg = "bg-slate-50/65 border-slate-100";
-                  let textBadge = "text-slate-500 bg-slate-100";
-                  let timeLabel = `${tagihan.diffDays} hari lagi`;
-
-                  if (tagihan.diffDays < 0) {
-                    alertBg = "bg-rose-50/60 border-rose-150";
-                    textBadge = "text-rose-600 bg-rose-100/80 animate-pulse";
-                    timeLabel = `Terlewat ${Math.abs(tagihan.diffDays)} hari`;
-                  } else if (tagihan.diffDays === 0) {
-                    alertBg = "bg-amber-50/60 border-amber-150";
-                    textBadge = "text-amber-700 bg-amber-100/80 animate-pulse";
-                    timeLabel = "TEMPO HARI INI";
-                  } else if (tagihan.diffDays <= 7) {
-                    alertBg = "bg-amber-50/30 border-amber-100";
-                    textBadge = "text-amber-600 bg-amber-50";
-                    timeLabel = `${tagihan.diffDays} Hari Lagi`;
-                  }
-
-                  return (
-                    <div key={idx} className={`p-2.5 rounded-lg border shadow-3xs transition hover:shadow-2xs ${alertBg}`}>
-                      <div className="flex justify-between items-start gap-1">
-                        <div className="min-w-0">
-                          <p className="text-[11.5px] font-bold text-slate-800 truncate" title={tagihan.anggotaNama}>{tagihan.anggotaNama}</p>
-                          <span className="text-[9.5px] text-slate-400 block mt-0.5 truncate">{tagihan.kategori} • {tagihan.id}</span>
-                        </div>
-                        <span className="text-[11px] font-black font-mono text-slate-900 flex-shrink-0 ml-1">
-                          Rp {tagihan.jumlah.toLocaleString('id-ID')}
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-[9px] mt-2 border-t pt-1 border-slate-100/60">
-                        <span className="text-slate-400">Tempo: {tagihan.dueDateFormated}</span>
-                        <span className={`px-1.5 py-0.5 rounded font-extrabold uppercase text-[8px] tracking-wide ${textBadge}`}>{timeLabel}</span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+            <button
+              onClick={() => props.onNavigate('support')}
+              className="mt-6 w-full py-3.5 bg-white text-indigo-700 text-[11px] font-black uppercase tracking-wider rounded-xl transition hover:bg-slate-50 active:scale-95 flex items-center justify-center gap-2 relative z-10"
+            >
+              <MessageSquare className="h-4 w-4" /> Buka Obrolan Support
+            </button>
           </div>
 
-          {unpaidInvoices.length > 0 && (
-            <button
-              onClick={() => props.onNavigate('anggota')}
-              className="w-full mt-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold rounded-lg shadow-sm active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Users className="h-3.5 w-3.5" /> Lihat & Hubungi Anggota
-            </button>
-          )}
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex flex-col justify-between text-left">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="p-2 bg-amber-50 rounded-xl">
+                <LayoutDashboard className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-800">Knowledge Base</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tutorial & Panduan</p>
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <button className="w-full text-left p-3.5 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-200 hover:bg-white transition flex flex-col gap-1 cursor-pointer">
+                <span className="text-[10px] font-black text-slate-900 block truncate">Panduan Cepat Tutup Buku Bulanan</span>
+                <span className="text-[9px] font-bold text-indigo-600 uppercase tracking-tight flex items-center gap-1">Pelajari <ExternalLink className="h-2 w-2" /></span>
+              </button>
+              <button className="w-full text-left p-3.5 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-200 hover:bg-white transition flex flex-col gap-1 cursor-pointer">
+                <span className="text-[10px] font-black text-slate-900 block truncate">Efisiensi Input Stok & Penjualan</span>
+                <span className="text-[9px] font-bold text-indigo-600 uppercase tracking-tight flex items-center gap-1">Pelajari <ExternalLink className="h-2 w-2" /></span>
+              </button>
+            </div>
+            
+            <p className="mt-6 text-[10px] text-slate-400 font-medium italic text-center">
+              Pusat bantuan kami aktif 24/7 untuk mendukung operasional koperasi digital Anda.
+            </p>
+          </div>
         </div>
       </div>
       </div>

@@ -60,6 +60,7 @@ export function Kontak(props: KontakProps) {
 
   // Contact Form Inputs
   const [formNama, setFormNama] = useState("");
+  const [formId, setFormId] = useState("");
   const [formNoHp, setFormNoHp] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formAlamat, setFormAlamat] = useState("");
@@ -82,6 +83,7 @@ export function Kontak(props: KontakProps) {
   const openAddModal = () => {
     setEditingItem(null);
     setFormNama("");
+    setFormId("");
     setFormNoHp("628");
     setFormEmail("");
     setFormAlamat("");
@@ -95,6 +97,7 @@ export function Kontak(props: KontakProps) {
   const openEditModal = (item: KontakLain) => {
     setEditingItem(item);
     setFormNama(item.nama);
+    setFormId(item.id);
     setFormNoHp(item.noHp || "628");
     setFormEmail(item.email || "");
     setFormAlamat(item.alamat || "");
@@ -129,6 +132,7 @@ export function Kontak(props: KontakProps) {
     if (editingItem) {
       const updated: KontakLain = {
         ...editingItem,
+        id: formId.trim() || editingItem.id,
         nama: formNama.trim(),
         noHp: cleanedPhone,
         email: formEmail.trim(),
@@ -139,7 +143,7 @@ export function Kontak(props: KontakProps) {
       };
       props.onUpdateKontakLain(updated);
     } else {
-      const newId = `CON-${Date.now().toString().slice(-6)}`;
+      const newId = formId.trim() || `CON-${Date.now().toString().slice(-6)}`;
       const created: KontakLain = {
         id: newId,
         nama: formNama.trim(),
@@ -273,12 +277,28 @@ export function Kontak(props: KontakProps) {
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="Cari kontak ..."
+                  placeholder="Cari Nama Kontak atau ID..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 bg-slate-50 font-medium w-full sm:w-56"
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="pl-8 pr-10 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 bg-slate-50 font-medium w-full sm:w-64"
                 />
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery("");
+                      setCurrentPage(1);
+                    }}
+                    className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 font-bold text-sm cursor-pointer"
+                    title="Bersihkan pencarian"
+                  >
+                    &times;
+                  </button>
+                )}
               </div>
 
               {/* Status filter */}
@@ -495,6 +515,17 @@ export function Kontak(props: KontakProps) {
             <form onSubmit={handleFormSubmit} className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
               
               <div className="flex flex-col gap-1 text-left">
+                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">ID {activeSubTab === "karyawan" ? "Karyawan" : activeSubTab === "supplier" ? "Supplier" : "Pelanggan"} (Opsional)</label>
+                <input
+                  type="text"
+                  placeholder="Kosongkan untuk otomatis..."
+                  value={formId}
+                  onChange={(e) => setFormId(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 bg-slate-50 font-mono font-bold text-red-600"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1 text-left">
                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Nama Lengkap</label>
                 <input
                   type="text"
@@ -561,46 +592,48 @@ export function Kontak(props: KontakProps) {
                 />
               </div>
 
-              <div className="flex flex-col gap-1 text-left">
-                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Foto Profil ID Card</label>
-                <div className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-150">
-                  {formFoto ? (
-                    <div className="relative w-12 h-12 rounded-lg border border-slate-200 overflow-hidden shrink-0">
-                      <img src={formFoto} alt="Preview" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => setFormFoto("")}
-                        className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[9px] font-black uppercase cursor-pointer"
-                      >
-                        Hapus
-                      </button>
+              {activeSubTab === "karyawan" && (
+                <div className="flex flex-col gap-1 text-left">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Foto Profil ID Card</label>
+                  <div className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-150">
+                    {formFoto ? (
+                      <div className="relative w-12 h-12 rounded-lg border border-slate-200 overflow-hidden shrink-0">
+                        <img src={formFoto} alt="Preview" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setFormFoto("")}
+                          className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[9px] font-black uppercase cursor-pointer"
+                        >
+                          Hapus
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg bg-slate-100 border border-dashed border-slate-250 flex items-center justify-center shrink-0">
+                        <Users className="h-5 w-5 text-slate-400" />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <input
+                        type="file"
+                        id="kontak-photo-upload"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setFormFoto(reader.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[9px] file:font-black file:uppercase file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
+                      />
+                      <p className="text-[8px] text-slate-400 mt-1 leading-tight">Format JPG/PNG persegi, maks 1MB untuk ID Card.</p>
                     </div>
-                  ) : (
-                    <div className="w-12 h-12 rounded-lg bg-slate-100 border border-dashed border-slate-250 flex items-center justify-center shrink-0">
-                      <Users className="h-5 w-5 text-slate-400" />
-                    </div>
-                  )}
-                  <div className="flex-1">
-                    <input
-                      type="file"
-                      id="kontak-photo-upload"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onloadend = () => {
-                            setFormFoto(reader.result as string);
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                      className="text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[9px] file:font-black file:uppercase file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
-                    />
-                    <p className="text-[8px] text-slate-400 mt-1 leading-tight">Format JPG/PNG persegi, maks 1MB untuk ID Card.</p>
                   </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex flex-col gap-1 text-left border-t border-slate-100 pt-3">
                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Status Kontak</label>
@@ -774,13 +807,7 @@ export function Kontak(props: KontakProps) {
                     </p>
                   </div>
 
-                  {/* Operational Notes */}
-                  <div className="text-left text-[7px] leading-relaxed text-slate-400 border-t border-slate-800/80 pt-2.5 space-y-1">
-                    <p className="text-[8px] font-extrabold text-slate-200 mb-1 leading-none uppercase font-mono">Panduan Pengunaan</p>
-                    <p>1. Kartu identitas ini merupakan tanda pengenal resmi ${props.koperasiName || "Financial System"}.</p>
-                    <p>2. Pihak ketiga dipersilakan melakukan pemindaian QR Code di atas menggunakan kamera ponsel guna memvalidasi status pengurus secara real-time di database.</p>
-                    <p>3. Jika profil nama / jabatan tidak terdaftar, maka kartu tersebut dinyatakan tidak sah.</p>
-                  </div>
+                  {/* Operational Notes removed */}
                 </div>
               </div>
             </div>

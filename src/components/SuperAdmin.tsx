@@ -26,7 +26,8 @@ import {
   Megaphone,
   ExternalLink,
   LifeBuoy,
-  Sliders
+  Sliders,
+  Mail
 } from 'lucide-react';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, query, orderBy, db, handleCloudError, OperationType, supabase, getDocs, where } from '../supabase';
 import { Tenant, TenantSubscription } from '../types';
@@ -37,9 +38,12 @@ import { SaaSFeatureManagement } from './SaaSFeatureManagement';
 
 interface SuperAdminProps {
   onImpersonate: (tenantId: string) => void;
+  globalConfig: any;
+  setGlobalConfig: React.Dispatch<React.SetStateAction<any>>;
+  lastLocalConfigUpdate?: React.MutableRefObject<number>;
 }
 
-export const SuperAdmin: React.FC<SuperAdminProps> = ({ onImpersonate }) => {
+export const SuperAdmin: React.FC<SuperAdminProps> = ({ onImpersonate, globalConfig, setGlobalConfig, lastLocalConfigUpdate }) => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [subscriptions, setSubscriptions] = useState<TenantSubscription[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +54,8 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onImpersonate }) => {
 
   // Custom confirmation dialogs and toast alert states
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [safetyLockKey, setSafetyLockKey] = useState("");
+  const [safetyInput, setSafetyInput] = useState("");
   const [confirmImpersonateId, setConfirmImpersonateId] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -59,25 +65,6 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onImpersonate }) => {
       setNotification(null);
     }, 5000);
   };
-
-  // Global System Config State
-  const [globalConfig, setGlobalConfig] = useState({
-    maintenanceMode: false,
-    announcement: "",
-    isAnnouncementActive: false,
-    announcementType: "info"
-  });
-
-  useEffect(() => {
-    const unsubConfig = onSnapshot(doc(db, "system_config", "global"), (snap) => {
-      if (snap.exists()) {
-        setGlobalConfig(snap.data() as any);
-      }
-    }, (err) => {
-      console.warn("SuperAdmin global config listener error:", err.message);
-    });
-    return () => unsubConfig();
-  }, []);
 
   const handleUpdateGlobalConfig = async () => {
     try {
@@ -118,7 +105,11 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onImpersonate }) => {
       showToast("error", "Masukkan ID Instansi terlebih dahulu.");
       return;
     }
-    setConfirmDeleteId(manualPurgeId.toLowerCase().trim());
+    const id = manualPurgeId.toLowerCase().trim();
+    const randomKey = Math.random().toString(36).substring(2, 8).toUpperCase();
+    setSafetyLockKey(randomKey);
+    setSafetyInput("");
+    setConfirmDeleteId(id);
   };
 
   const handleSaveTenant = async (e: React.FormEvent) => {
@@ -241,6 +232,11 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onImpersonate }) => {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
             <ShieldCheck className="h-8 w-8 text-indigo-600" />
             Super Admin Control Panel
+            {globalConfig.maintenanceMode && (
+              <span className="flex items-center gap-1.5 px-3 py-1 bg-rose-50 text-rose-600 text-[10px] font-black uppercase tracking-widest rounded-full border border-rose-100 animate-pulse">
+                <Server className="h-3 w-3" /> Maintenance Active
+              </span>
+            )}
           </h1>
           <p className="text-slate-500 text-sm mt-1">
             Kelola penyewa (tenants), langganan billing, dan status akses system.
@@ -411,6 +407,14 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onImpersonate }) => {
                       <div className="flex items-center gap-2 text-sm text-slate-600 font-medium">
                         <Calendar className="h-3.5 w-3.5 text-slate-400" />
                         {t.validUntil}
+                        {t.lastReminder7DaySent && (
+                          <div className="group relative">
+                            <Mail className="h-3 w-3 text-indigo-500" />
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-white text-[8px] font-black uppercase tracking-widest rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                              Reminded (7 Days)
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -448,7 +452,12 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onImpersonate }) => {
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => setConfirmDeleteId(t.id)}
+                          onClick={() => {
+                            const randomKey = Math.random().toString(36).substring(2, 8).toUpperCase();
+                            setSafetyLockKey(randomKey);
+                            setSafetyInput("");
+                            setConfirmDeleteId(t.id);
+                          }}
                           className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
                           title="Delete Tenant"
                         >
@@ -464,8 +473,48 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onImpersonate }) => {
         </div>
       </div>
 
-      {/* ANNOUNCEMENT & SYSTEM STATUS CONTROL */}
-      <div className="grid md:grid-cols-2 gap-6">
+        {/* Billing Automation Status Card */}
+        <div className="mt-6 bg-white p-6 rounded-3xl border border-indigo-100 shadow-sm relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full -mr-16 -mt-16 blur-2xl" />
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex gap-4">
+              <div className="h-12 w-12 rounded-2xl bg-indigo-600 flex items-center justify-center shrink-0">
+                <Mail className="h-6 w-6 text-white animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-black text-slate-900 tracking-tight text-left">Automated Billing Reminders</h3>
+                <p className="text-[11px] text-slate-500 font-medium leading-relaxed max-w-md text-left">
+                  Server monitoring aktif: Mengirim pengingat otomatis ke email owner tenant via background task 7 hari sebelum langganan berakhir.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-right flex flex-col items-end">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Status Automasi</span>
+                <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1.5 mt-0.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> ONLINE & MONITORING
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/admin/trigger-billing-reminders', { method: 'POST' });
+                    if(res.ok) showToast('success', 'Background check billing manual berhasil dipicu!');
+                  } catch (e) {
+                    showToast('error', 'Gagal menghubungi server automasi.');
+                  }
+                }}
+                className="px-4 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-widest rounded-xl transition active:scale-95 flex items-center gap-2 cursor-pointer"
+              >
+                Trigger Manual Now
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ANNOUNCEMENT & SYSTEM STATUS CONTROL */}
+        <div className="grid md:grid-cols-2 gap-6 mt-6">
         <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-bold text-slate-900 flex items-center gap-2">
@@ -495,6 +544,24 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onImpersonate }) => {
                 <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${globalConfig.isAnnouncementActive ? 'translate-x-6' : ''}`} />
               </button>
             </div>
+            
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <ShieldAlert className="h-3 w-3" /> Root PIN Bypass (SuperIT Only)
+              </label>
+              <div className="relative">
+                <ShieldCheck className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <input 
+                  type="text"
+                  value={globalConfig.rootPIN}
+                  onChange={(e) => setGlobalConfig({...globalConfig, rootPIN: e.target.value})}
+                  placeholder="PIN Pengamanan"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-mono font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+              <p className="text-[9px] text-slate-400 italic">PIN ini digunakan untuk fitur "Override Master Sistem" di halaman login.</p>
+            </div>
+
             <button
               onClick={handleUpdateGlobalConfig}
               className="w-full py-2.5 bg-indigo-600 text-white text-xs font-black uppercase tracking-wider rounded-xl hover:bg-indigo-700 transition active:scale-95 shadow-lg shadow-indigo-100"
@@ -513,33 +580,81 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onImpersonate }) => {
           </div>
           <div className="space-y-4">
             <div className={`p-4 rounded-2xl border ${globalConfig.maintenanceMode ? 'bg-rose-50 border-rose-100' : 'bg-emerald-50 border-emerald-100'}`}>
-              <p className={`text-xs font-medium leading-relaxed ${globalConfig.maintenanceMode ? 'text-rose-900' : 'text-emerald-900'}`}>
+              <p className={`text-xs font-black uppercase tracking-tight leading-relaxed ${globalConfig.maintenanceMode ? 'text-rose-900' : 'text-emerald-900'}`}>
                 {globalConfig.maintenanceMode 
-                  ? "Sistem sedang dalam mode MAINTENANCE. Seluruh akses tenant akan dibekukan sementara."
-                  : "Sistem beroperasi NORMAL. Semua tenant dapat mengakses data tanpa hambatan."}
+                  ? "STATUS: EMERGENCY MAINTENANCE MODE AKTIF"
+                  : "STATUS: SYSTEM NORMAL & STABLE"}
+              </p>
+              <p className={`text-[10px] mt-1 font-medium leading-relaxed ${globalConfig.maintenanceMode ? 'text-rose-700/70' : 'text-emerald-900/70'}`}>
+                {globalConfig.maintenanceMode 
+                  ? "Seluruh akses tenant dibekukan untuk sementara waktu demi keamanan data."
+                  : "Semua tenant dapat mengakses data dan fitur secara penuh tanpa hambatan."}
               </p>
             </div>
             
             <button
-              onClick={() => {
-                if(window.confirm("PERINGATAN: Mode maintenance akan membekukan SELURUH sistem. Lanjutkan?")) {
-                  const newMode = !globalConfig.maintenanceMode;
-                  setDoc(doc(db, "system_config", "global"), { ...globalConfig, maintenanceMode: newMode }, { merge: true });
+              onClick={async () => {
+                const action = globalConfig.maintenanceMode ? "Menonaktifkan" : "Mengaktifkan";
+                
+                if(window.confirm(`KONFIRMASI SYSTEM: Apakah Anda yakin ingin ${action} Emergency Maintenance Mode? Hal ini berdampak pada seluruh akses tenant.`)) {
+                  try {
+                    const newMode = !globalConfig.maintenanceMode;
+                    
+                    // A. Mark local update time to prevent snapshot race condition
+                    if (lastLocalConfigUpdate) {
+                      lastLocalConfigUpdate.current = Date.now();
+                    }
+                    
+                    // B. Update LOCAL GLOBAL STATE IMMEDIATELY (snappy UI)
+                    setGlobalConfig((prev: any) => ({
+                      ...prev,
+                      maintenanceMode: newMode
+                    }));
+                    
+                    // C. Persist to Database
+                    const dbUpdate = {
+                      maintenanceMode: newMode,
+                      updatedBy: "SuperAdmin-EMERGENCY",
+                      updatedAt: new Date().toISOString()
+                    };
+                    
+                    // Perform sync
+                    await setDoc(doc(db, "system_config", "global"), dbUpdate, { merge: true });
+                    showToast("success", `PEMELIHARAAN SYSTEM: Status berhasil diubah menjadi ${newMode ? "AKTIF" : "NONAKTIF"}`);
+                  } catch (err) {
+                    console.error("Maintenance toggle error:", err);
+                    showToast("error", "Terjadi kesalahan sinkronisasi saat merubah status maintenance.");
+                  }
                 }
               }}
-              className={`w-full py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition active:scale-95 shadow-lg ${
+              style={{ backgroundColor: '#242cf2' }}
+              className={`w-full py-4 text-sm font-black uppercase tracking-[0.2em] rounded-2xl transition-all active:scale-95 shadow-2xl border-4 ${
                 globalConfig.maintenanceMode 
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-100' 
-                : 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-100'
+                ? 'border-red-400 text-white shadow-red-200' 
+                : 'border-white/20 text-white shadow-indigo-200'
               }`}
             >
-              {globalConfig.maintenanceMode ? "Matikan Maintenance Mode" : "Aktifkan Maintenance Mode"}
+              {globalConfig.maintenanceMode ? "MATIKAN MAINTENANCE SEKARANG" : "AKTIFKAN MAINTENANCE DARURAT"}
             </button>
 
-            <div className="pt-4 border-t border-slate-50">
-              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase">
-                <Activity className="h-3 w-3" /> System Health Status: <span className="text-emerald-500">OPTIMAL</span>
+            <div className="pt-4 border-t border-slate-50 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase">
+                  <Activity className="h-3 w-3" /> Health Status: <span className="text-emerald-500">OPTIMAL</span>
+                </div>
+                {globalConfig.maintenanceMode && (
+                  <span className="flex h-2 w-2 rounded-full bg-rose-500 animate-ping" />
+                )}
               </div>
+              
+              {globalConfig.maintenanceMode && (
+                <div className="p-3 bg-indigo-50 rounded-xl border border-indigo-100">
+                  <p className="text-[9px] text-indigo-700 font-bold leading-relaxed">
+                    <span className="block mb-1 text-indigo-900 uppercase">Akses Bypass Admin:</span>
+                    Meskipun maintenance aktif, akun owner (@komarudink403) tetap memiliki akses penuh untuk perbaikan.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -838,42 +953,59 @@ export const SuperAdmin: React.FC<SuperAdminProps> = ({ onImpersonate }) => {
         );
       })()}
 
-      {/* CONFIRM DELETE MODAL WITH RE-REGISTRATION CAPABILITY */}
+      {/* CONFIRM DELETE MODAL WITH SAFETY LOCK */}
       {confirmDeleteId && (() => {
         const t = tenants.find(x => x.id === confirmDeleteId);
         return (
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/65 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden p-7 space-y-6 border border-rose-100 animate-in zoom-in-95 duration-200">
+            <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden p-7 space-y-6 border border-rose-100 animate-in zoom-in-95 duration-200 text-left">
               <div className="flex items-center gap-4 text-rose-600">
                 <div className="p-3 bg-rose-50 rounded-2xl">
-                  <Trash2 className="h-6 w-6" />
+                  <ShieldAlert className="h-6 w-6 animate-pulse" />
                 </div>
                 <div>
-                  <h3 className="font-black text-rose-800 text-lg leading-tight">Hapus Rental Sistem</h3>
-                  <p className="text-[10px] text-rose-500 font-bold uppercase tracking-wider cursor-help" title="Seluruh data dan identitas akan bersih secara aman">Pembersihan Menyeluruh</p>
+                  <h3 className="font-black text-rose-800 text-lg leading-tight uppercase tracking-tight">Safety Lock</h3>
+                  <p className="text-[10px] text-rose-500 font-bold uppercase tracking-wider">Verifikasi Penghapusan</p>
                 </div>
               </div>
               <div className="space-y-4">
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Apakah Anda yakin ingin menghapus instansi penyewa <strong className="text-rose-600 font-black">"{t?.name || confirmDeleteId}"</strong> secara permanen dari server cloud?
+                <p className="text-sm text-slate-600 leading-relaxed bg-rose-50/50 p-4 rounded-2xl border border-rose-100">
+                  Apakah Anda yakin ingin menghapus instansi penyewa <strong className="text-rose-600 font-black">"{t?.name || confirmDeleteId}"</strong> secara permanen? Seluruh database relasional dan akun otentikasi akan dihancurkan.
                 </p>
-                <div className="bg-rose-50/50 rounded-2xl p-4 text-xs text-rose-800 border border-rose-100/60 leading-relaxed space-y-2">
-                  <p className="font-bold uppercase tracking-widest text-[10px]">&bull; Cakupan Penghapusan:</p>
-                  <p>1. Semua daftar COA, data transaksi jurnal korporat, stok gudang, data anggota, dan tabungan koperasi akan <strong>dihapus total</strong> dari cloud database.</p>
-                  <p>2. Seluruh histori cache client-side di browser lokal akan dibersihkan.</p>
-                  <p>3. Email administrator utama <strong className="font-mono bg-rose-100/50 px-1 py-0.5 rounded text-rose-900">{t?.ownerEmail}</strong> akan dibebaskan kembali sehingga email ini dapat didaftarkan ulang untuk instansi baru.</p>
+                
+                <div className="space-y-2">
+                  <div className="flex justify-between items-end">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ketik Kode Pengaman</label>
+                    <span className="text-xs font-mono font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded select-none tracking-widest border border-indigo-100">{safetyLockKey}</span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Masukkan kode di atas..."
+                    value={safetyInput}
+                    onChange={(e) => setSafetyInput(e.target.value.toUpperCase())}
+                    className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-center font-mono font-black text-lg focus:border-rose-500 focus:bg-white outline-none transition"
+                    autoFocus
+                  />
                 </div>
               </div>
               <div className="flex gap-3 pt-2">
                 <button
-                  onClick={() => setConfirmDeleteId(null)}
+                  onClick={() => {
+                    setConfirmDeleteId(null);
+                    setSafetyInput("");
+                  }}
                   className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition text-xs"
                 >
-                  Batal
+                  Batalkan
                 </button>
                 <button
+                  disabled={safetyInput !== safetyLockKey}
                   onClick={() => handleDeleteTenant(confirmDeleteId)}
-                  className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-lg shadow-rose-200 transition active:scale-95 text-xs"
+                  className={`flex-1 py-3 text-white font-bold rounded-xl shadow-lg transition active:scale-95 text-xs uppercase tracking-widest ${
+                    safetyInput === safetyLockKey 
+                      ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-200 animate-pulse' 
+                      : 'bg-slate-300 cursor-not-allowed opacity-50'
+                  }`}
                 >
                   Ya, Hapus Permanen
                 </button>

@@ -196,12 +196,12 @@ export function Invoice({
 
           <div className="flex flex-col gap-1">
             <label className="text-xs font-bold text-gray-500">
-              {activeSubTab === 'resmi' ? 'Kirim Penagihan Kepada (Nama Warga/Klien)' : 'Kirim Penawaran Kepada (Nama Calon Pembeli / Poktan)'}
+              {activeSubTab === 'resmi' ? 'Kirim Penagihan Kepada Klien' : 'Kirim Penawaran Kepada Calon Pembeli'}
             </label>
             <input
               id="inv-client-input"
               type="text"
-              placeholder={activeSubTab === 'resmi' ? 'Contoh: Bpk. Ahmad Subarjo' : 'Contoh: Kelompok Tani Harapan Jaya'}
+              placeholder={activeSubTab === 'resmi' ? 'Masukan Nama Klien' : 'Contoh: Kelompok Tani Harapan Jaya'}
               className="px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-red-500 font-semibold"
               value={invClient}
               onChange={(e) => setInvClient(e.target.value)}

@@ -93,6 +93,9 @@ export function Penjualan(props: PenjualanProps) {
   const [errorMsg, setErrorMsg] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Confirmation Modal states
+  const [showConfirmDeleteSaleId, setShowConfirmDeleteSaleId] = useState<string | null>(null);
+
   // Receipt modal states
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [currentReceipt, setCurrentReceipt] = useState<PastSale | null>(null);
@@ -350,9 +353,7 @@ export function Penjualan(props: PenjualanProps) {
   };
 
   const handleDeleteHistorySale = (id: string) => {
-    if (confirm("Apakah Anda yakin ingin menghapus log transaksi penjualan ini? Tindakan ini hanya menghapus riwayat tampilan nota, akun bookkeeping ledger sudah terlanjur dipost.")) {
-      setSalesHistory(salesHistory.filter(s => s.id !== id));
-    }
+    setShowConfirmDeleteSaleId(id);
   };
 
   const exportToCSV = () => {
@@ -403,6 +404,44 @@ export function Penjualan(props: PenjualanProps) {
 
   return (
     <div id="penjualan-pos-screen" className="space-y-6">
+      {/* DELETE LOG CONFIRMATION MODAL */}
+      {showConfirmDeleteSaleId && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="h-8 w-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-black text-slate-800 mb-2">Hapus Riwayat Nota?</h3>
+              <p className="text-xs text-slate-500 leading-relaxed mb-6">
+                Apakah Anda yakin ingin menghapus log transaksi <span className="font-bold text-red-600">{showConfirmDeleteSaleId}</span> ini? 
+                <br /><small className="text-slate-400">Tindakan ini hanya menghapus salinan nota digital di sesi ini, data ledger akuntansi tetap tersimpan di server.</small>
+              </p>
+              
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmDeleteSaleId(null)}
+                  className="flex-1 py-3 text-xs text-slate-500 font-bold uppercase tracking-wider rounded-xl hover:bg-slate-50 transition cursor-pointer border border-slate-200"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSalesHistory(salesHistory.filter(s => s.id !== showConfirmDeleteSaleId));
+                    setShowConfirmDeleteSaleId(null);
+                  }}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-red-200 transition active:scale-95 cursor-pointer"
+                >
+                  Ya, Hapus
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HEADER SECTION */}
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">

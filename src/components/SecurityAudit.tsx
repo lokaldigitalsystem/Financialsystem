@@ -65,6 +65,7 @@ export const SecurityAudit: React.FC<SecurityAuditProps> = ({
   
   // Wipe logs confirmation
   const [showWipeModal, setShowWipeModal] = useState(false);
+  const [safetyLockKey, setSafetyLockKey] = useState('');
   const [wipePassword, setWipePassword] = useState('');
 
   // Notification Toast
@@ -151,7 +152,7 @@ export const SecurityAudit: React.FC<SecurityAuditProps> = ({
         action: "Pemasangan Sesi Remote Support",
         category: "Hak Akses",
         severity: "INFO",
-        details: "Inisiasi koneksi investigasi sistem oleh Tim Pusat Keamanan SaaS (Bpk. Komarudin SuperIT).",
+        details: `Inisiasi koneksi investigasi sistem oleh Tim Pusat Keamanan SaaS (${currentUserName || 'Administrator Utama'}).`,
         status: "Sukses"
       },
       {
@@ -179,8 +180,8 @@ export const SecurityAudit: React.FC<SecurityAuditProps> = ({
         timestamp: evTime,
         tenantId: targetTenantId,
         tenantName: targetTenantName,
-        actorEmail: count % 2 === 0 ? "bendahara@koperasi.id" : "komarudink403@gmail.com",
-        actorName: count % 2 === 0 ? currentUserName : "Bpk. Komarudin",
+        actorEmail: count % 2 === 0 ? "bendahara@koperasi.id" : currentUserEmail,
+        actorName: count % 2 === 0 ? currentUserName : currentUserName,
         category: ev.category as any,
         severity: ev.severity as any,
         action: ev.action!,
@@ -244,11 +245,11 @@ export const SecurityAudit: React.FC<SecurityAuditProps> = ({
     }
   };
 
-  // 4. Global Hard Clean Master Reset (Compliance password secure)
+  // 4. Global Hard Clean Master Reset (Compliance safety lock secure)
   const handleWipeSecurityTrail = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (wipePassword !== "Pusat-SaaS-Aman") {
-      showToast('error', 'Sandi Keamanan Kepatuhan salah! Penghancuran rekaman ditolak.');
+    if (wipePassword !== safetyLockKey) {
+      showToast('error', 'Kode Keamanan Kepatuhan salah! Penghancuran rekaman ditolak.');
       return;
     }
 
@@ -512,7 +513,12 @@ export const SecurityAudit: React.FC<SecurityAuditProps> = ({
 
           {isGlobalAdmin && (
             <button
-              onClick={() => setShowWipeModal(true)}
+              onClick={() => {
+                const randomKey = Math.random().toString(36).substring(2, 8).toUpperCase();
+                setSafetyLockKey(randomKey);
+                setWipePassword("");
+                setShowWipeModal(true);
+              }}
               type="button"
               className="flex items-center gap-2 px-4 py-3 bg-red-650 hover:bg-red-700 text-white text-[11px] font-black uppercase tracking-wider rounded-xl transition shadow active:scale-95 cursor-pointer"
             >
@@ -882,14 +888,15 @@ export const SecurityAudit: React.FC<SecurityAuditProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div className="bg-white rounded-[2rem] shadow-2xl p-6 w-full max-w-sm border border-slate-100 animate-in zoom-in-95 duration-200 text-left space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 className="font-black text-xs text-rose-700 uppercase tracking-wider flex items-center gap-1.5">
-                <ShieldAlert className="h-4.5 w-4.5 text-rose-600 animate-pulse" /> Konfirmasi Penghancuran Log
+              <h3 className="font-black text-xs text-rose-700 uppercase tracking-widest flex items-center gap-1.5">
+                <ShieldAlert className="h-4.5 w-4.5 text-rose-600 animate-pulse" /> Safety Lock: Log Destruction
               </h3>
               <button
                 type="button"
                 onClick={() => {
                   setShowWipeModal(false);
                   setWipePassword('');
+                  setSafetyLockKey('');
                 }}
                 className="p-1 text-slate-400 hover:text-slate-900 text-xs font-bold"
               >
@@ -901,16 +908,20 @@ export const SecurityAudit: React.FC<SecurityAuditProps> = ({
               Anda bersiap melakukan tindakan berbahaya berupa penghapusan fisik permanen seluruh log kepatuhan audit sistem cloud SaaS.
             </p>
 
-            <form onSubmit={handleWipeSecurityTrail} className="space-y-3">
-              <div className="space-y-1.5">
-                <label className="text-[9.5px] font-black text-rose-700 uppercase tracking-wider">Masukkan Sandi Rahasia Kepatuhan</label>
+            <form onSubmit={handleWipeSecurityTrail} className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex justify-between items-end">
+                  <label className="text-[9.5px] font-black text-rose-700 uppercase tracking-wider">Ketik Kode Pengaman</label>
+                  <span className="text-xs font-mono font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded select-none tracking-widest border border-indigo-100">{safetyLockKey}</span>
+                </div>
                 <input
-                  type="password"
+                  type="text"
                   required
-                  placeholder="Ketik: Pusat-SaaS-Aman"
+                  placeholder="Masukkan kode di atas..."
                   value={wipePassword}
-                  onChange={(e) => setWipePassword(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-rose-50/50 text-xs text-rose-900 font-extrabold rounded-xl border border-rose-150 focus:outline-none focus:border-rose-500 focus:bg-white placeholder-rose-300"
+                  onChange={(e) => setWipePassword(e.target.value.toUpperCase())}
+                  className="w-full px-3.5 py-3 bg-rose-50/30 text-center text-lg text-rose-900 font-extrabold rounded-xl border-2 border-rose-100 focus:outline-none focus:border-rose-500 focus:bg-white placeholder-rose-200 uppercase font-mono"
+                  autoFocus
                 />
               </div>
 
@@ -920,6 +931,7 @@ export const SecurityAudit: React.FC<SecurityAuditProps> = ({
                   onClick={() => {
                     setShowWipeModal(false);
                     setWipePassword('');
+                    setSafetyLockKey('');
                   }}
                   className="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition cursor-pointer text-center"
                 >
@@ -927,7 +939,12 @@ export const SecurityAudit: React.FC<SecurityAuditProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer text-center shadow shadow-rose-150"
+                  disabled={wipePassword !== safetyLockKey}
+                  className={`flex-1 py-2.5 text-white rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer text-center shadow ${
+                    wipePassword === safetyLockKey 
+                      ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-200' 
+                      : 'bg-slate-300 cursor-not-allowed'
+                  }`}
                 >
                   Eksekusi Cuci Log
                 </button>
