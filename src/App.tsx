@@ -1399,29 +1399,29 @@ export default function App() {
   }, [currentUsername]);
 
   useEffect(() => {
-    if (!koperasiId) return;
+    if (!koperasiId || !cloudStatus.meta) return;
     localStorage.setItem(`kdmp_${koperasiId}_koperasiName`, koperasiName);
-  }, [koperasiName, koperasiId]);
+  }, [koperasiName, koperasiId, cloudStatus.meta]);
 
   useEffect(() => {
-    if (!koperasiId) return;
+    if (!koperasiId || !cloudStatus.meta) return;
     localStorage.setItem(`kdmp_${koperasiId}_koperasiAlamat`, koperasiAlamat);
-  }, [koperasiAlamat, koperasiId]);
+  }, [koperasiAlamat, koperasiId, cloudStatus.meta]);
 
   useEffect(() => {
-    if (!koperasiId) return;
+    if (!koperasiId || !cloudStatus.meta) return;
     localStorage.setItem(`kdmp_${koperasiId}_koperasiLogo`, koperasiLogo);
-  }, [koperasiLogo, koperasiId]);
+  }, [koperasiLogo, koperasiId, cloudStatus.meta]);
 
   useEffect(() => {
-    if (!koperasiId) return;
+    if (!koperasiId || !cloudStatus.meta) return;
     localStorage.setItem(`kdmp_${koperasiId}_koperasiInvoiceSize`, koperasiInvoiceSize);
-  }, [koperasiInvoiceSize, koperasiId]);
+  }, [koperasiInvoiceSize, koperasiId, cloudStatus.meta]);
 
   useEffect(() => {
-    if (!koperasiId) return;
+    if (!koperasiId || !cloudStatus.meta) return;
     localStorage.setItem(`kdmp_${koperasiId}_koperasiSubtext`, koperasiSubtext);
-  }, [koperasiSubtext, koperasiId]);
+  }, [koperasiSubtext, koperasiId, cloudStatus.meta]);
 
   // LOGIN OPERATION
   const handleLogin = async (e: React.FormEvent) => {
@@ -1965,6 +1965,12 @@ export default function App() {
     if (!isSupportMode) {
       setOriginalKoperasiId(koperasiId);
     }
+    
+    // Clear current metadata before switching to prevent leakage to new tenant's local storage
+    setKoperasiName("");
+    setKoperasiLogo("");
+    setKoperasiAlamat("");
+    
     setKoperasiId(targetId);
     setIsSupportMode(true);
 
@@ -1987,6 +1993,12 @@ export default function App() {
 
   const handleExitSupportMode = () => {
     const backupOriginal = originalKoperasiId;
+    
+    // Clear sensitive metadata from memory before switching back
+    setKoperasiName("");
+    setKoperasiLogo("");
+    setKoperasiAlamat("");
+    
     if (originalKoperasiId) {
       setKoperasiId(originalKoperasiId);
       setOriginalKoperasiId(null);
@@ -3957,7 +3969,7 @@ export default function App() {
               <div className="space-y-1">
                 <h1 className="text-2xl font-black text-slate-900 tracking-tight font-display italic decoration-indigo-500 underline decoration-4 underline-offset-4">FINANCIAL SYSTEM</h1>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">Enterprise Resource Planning</p>
-                <p className="text-[8px] text-indigo-500 font-black uppercase tracking-[0.4em] mt-1">© Bpk. Komarudin / SuperIT</p>
+                <p className="text-[8px] text-indigo-500 font-black uppercase tracking-[0.4em] mt-1">SUPPORT BY LOKAL DIGITAL SYSTEM</p>
                 <div className="h-1 w-8 bg-slate-200 mx-auto mt-4 rounded-full" />
               </div>
             </div>
@@ -5080,19 +5092,20 @@ export default function App() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-black text-white uppercase tracking-tight">Active Remote Support Session</h3>
-                    <span className="px-2 py-0.5 bg-rose-500 text-[8px] font-black text-white rounded uppercase animate-pulse">Live Investigation</span>
+                    <h3 className="text-sm font-black text-white uppercase tracking-tight italic">Sesi Remote Support Aktif</h3>
+                    <span className="px-2 py-0.5 bg-indigo-500 text-[8px] font-black text-white rounded uppercase animate-pulse tracking-widest">Lokal Digital System</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5 font-medium">
-                    Anda sedang mengakses workspace tenant <span className="text-amber-400 font-bold tracking-wider">{koperasiId}</span>. Semua perubahan data akan langsung tersimpan di database penyewa.
+                  <p className="text-[11px] text-slate-400 mt-1 font-medium leading-relaxed">
+                    Aplikasi saat ini sedang di remote oleh <span className="text-amber-400 font-bold underline underline-offset-4 decoration-amber-500/30">Team Support Lokal Digital System</span>. 
+                    Anda sedang mengakses workspace tenant <span className="text-white font-black bg-slate-800 px-2 py-0.5 rounded ml-1">{koperasiId}</span>.
                   </p>
                 </div>
               </div>
               <button
                 onClick={handleExitSupportMode}
-                className="px-5 py-2 bg-white hover:bg-slate-100 text-slate-900 text-[10px] font-black uppercase tracking-widest rounded-xl transition shadow-xl active:scale-95 flex items-center gap-2"
+                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-900 text-[10px] font-black uppercase tracking-widest rounded-xl transition shadow-xl shadow-amber-500/10 active:scale-95 flex items-center gap-2"
               >
-                Akhiri Sesi & Kembali
+                Akhiri Sesi Remote
               </button>
             </div>
           </div>
