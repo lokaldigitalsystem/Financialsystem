@@ -24,8 +24,8 @@ import {
   FileDown,
   QrCode,
   Printer,
-  ArrowLeftRight,
-  ShieldCheck
+  AlertTriangle,
+  CheckCircle2
 } from 'lucide-react';
 import { KontakLain } from '../types';
 
@@ -34,7 +34,7 @@ interface KontakProps {
   kontakLainData: KontakLain[];
   accessMode: "admin" | "view";
   onAddKontakLain: (kontak: KontakLain) => void;
-  onUpdateKontakLain: (kontak: KontakLain) => void;
+  onUpdateKontakLain: (kontak: KontakLain, originalId?: string) => void;
   onDeleteKontakLain: (id: string) => void;
   koperasiId?: string;
   koperasiName?: string;
@@ -70,7 +70,12 @@ export function Kontak(props: KontakProps) {
 
   // ID Card Viewer states
   const [selectedIdCardContact, setSelectedIdCardContact] = useState<any | null>(null);
-  const [isCardFlipped, setIsCardFlipped] = useState(false);
+
+  // Custom Delete Confirmation state
+  const [itemToDelete, setItemToDelete] = useState<KontakLain | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
 
   // Reset page when switching tabs or filters
   useEffect(() => {
@@ -141,7 +146,7 @@ export function Kontak(props: KontakProps) {
         status: formStatus,
         foto: formFoto
       };
-      props.onUpdateKontakLain(updated);
+      props.onUpdateKontakLain(updated, editingItem.id);
     } else {
       const newId = formId.trim() || `CON-${Date.now().toString().slice(-6)}`;
       const created: KontakLain = {
@@ -159,6 +164,11 @@ export function Kontak(props: KontakProps) {
     }
 
     setIsModalOpen(false);
+    
+    // Show success notification
+    setToastMessage(editingItem ? "Kontak berhasil diperbarui!" : "Kontak baru berhasil ditambahkan!");
+    setShowSuccessToast(true);
+    setTimeout(() => setShowSuccessToast(false), 3000);
   };
 
   // Filter contacts lists based on active subtab
@@ -415,7 +425,6 @@ export function Kontak(props: KontakProps) {
                                 type="button"
                                 onClick={() => {
                                   setSelectedIdCardContact(c);
-                                  setIsCardFlipped(false);
                                 }}
                                 className="text-red-650 hover:text-red-800 p-1 cursor-pointer transition flex items-center justify-center bg-red-50 hover:bg-red-100 rounded-md"
                                 title="Lihat & Cetak ID Card QR"
@@ -434,15 +443,14 @@ export function Kontak(props: KontakProps) {
                             {props.accessMode === "admin" && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  if (confirm(`Apakah Anda yakin ingin menghapus kontak "${c.nama}"?`)) {
-                                    props.onDeleteKontakLain(c.id);
-                                  }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setItemToDelete(c);
                                 }}
-                                className="text-slate-350 hover:text-red-600 p-1 cursor-pointer transition"
+                                className="text-slate-400 hover:text-red-600 p-1.5 transition-all hover:bg-red-50 rounded-lg cursor-pointer"
                                 title="Hapus"
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Trash2 className="h-4 w-4" />
                               </button>
                             )}
                           </div>
@@ -515,14 +523,15 @@ export function Kontak(props: KontakProps) {
             <form onSubmit={handleFormSubmit} className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
               
               <div className="flex flex-col gap-1 text-left">
-                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">ID {activeSubTab === "karyawan" ? "Karyawan" : activeSubTab === "supplier" ? "Supplier" : "Pelanggan"} (Opsional)</label>
+                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">ID {activeSubTab === "karyawan" ? "Karyawan" : activeSubTab === "supplier" ? "Supplier" : "Pelanggan"} (Bisa Diedit)</label>
                 <input
                   type="text"
-                  placeholder="Kosongkan untuk otomatis..."
+                  placeholder="ID Otomatis jika kosong..."
                   value={formId}
                   onChange={(e) => setFormId(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 bg-slate-50 font-mono font-bold text-red-600"
+                  className="w-full px-4 py-2.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:border-red-500 bg-slate-50/50 font-mono font-bold text-slate-800"
                 />
+                <p className="text-[8px] text-slate-400 font-medium">Ubah ID ini jika Anda ingin menggunakan kode penomoran sendiri.</p>
               </div>
 
               <div className="flex flex-col gap-1 text-left">
@@ -655,21 +664,124 @@ export function Kontak(props: KontakProps) {
 
             </form>
 
-            <div className="p-4 bg-slate-50 border-t border-slate-150 flex items-center justify-end gap-2.5 shrink-0">
+            <div className="p-4 bg-slate-50 border-t border-slate-150 flex items-center justify-between gap-2.5 shrink-0">
+              {editingItem && props.accessMode === "admin" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setItemToDelete(editingItem);
+                  }}
+                  className="px-3 py-1.5 text-red-600 hover:bg-red-50 font-bold text-xs rounded-lg transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Hapus
+                </button>
+              )}
+              <div className="flex items-center gap-2.5 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-1.5 bg-white hover:bg-slate-100 border border-slate-250 text-slate-700 font-semibold text-xs rounded transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFormSubmit}
+                  className="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded shadow transition cursor-pointer"
+                >
+                  Simpan
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {itemToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60] animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-5 bg-red-600 text-white flex items-center gap-3 border-b border-red-700">
+              <div className="p-2 bg-white/20 rounded-xl">
+                <Trash2 className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base leading-tight uppercase tracking-tight">Konfirmasi Hapus</h3>
+                <p className="text-[10px] text-white/70 font-bold uppercase tracking-widest mt-0.5">Keamanan Data Permanen</p>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="flex items-start gap-4 p-4 bg-rose-50 rounded-2xl border border-rose-100/50 shadow-inner">
+                <div className="p-1.5 bg-rose-100 rounded-lg shrink-0">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                   <p className="text-[10px] uppercase font-black text-red-400 tracking-widest mb-1">Peringatan Penghapusan</p>
+                   <p className="text-xs text-red-900 font-bold leading-relaxed">
+                    Hapus permanen kontak <span className="text-red-600 underline underline-offset-2 decoration-red-300">"{itemToDelete.nama}"</span>?
+                  </p>
+                </div>
+              </div>
+              <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl flex items-center gap-3">
+                 <div className="h-2 w-2 rounded-full bg-slate-300 animate-pulse"></div>
+                 <p className="text-[10px] text-slate-500 font-bold leading-snug">
+                    Tindakan ini akan menghapus seluruh biodata dan riwayat verifikasi QR ID Card secara instan dari cloud storage.
+                 </p>
+              </div>
+            </div>
+
+            <div className="px-6 py-5 bg-slate-50 border-t border-slate-100 flex gap-2.5">
               <button
                 type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="px-4 py-1.5 bg-white hover:bg-slate-100 border border-slate-250 text-slate-700 font-semibold text-xs rounded transition"
+                onClick={() => setItemToDelete(null)}
+                className="flex-1 py-3 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-black uppercase tracking-widest rounded-xl transition duration-150 cursor-pointer active:scale-95"
               >
                 Batal
               </button>
               <button
                 type="button"
-                onClick={handleFormSubmit}
-                className="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded shadow transition cursor-pointer"
+                disabled={isDeleting}
+                onClick={async () => {
+                  setIsDeleting(true);
+                  try {
+                    props.onDeleteKontakLain(itemToDelete.id);
+                    setItemToDelete(null);
+                    setIsModalOpen(false);
+                    
+                    // Show success toast
+                    setToastMessage("Kontak berhasil dihapus secara permanen.");
+                    setShowSuccessToast(true);
+                    setTimeout(() => setShowSuccessToast(false), 3000);
+                  } catch (err) {
+                    setErrorMsg("Gagal menghapus kontak.");
+                  } finally {
+                    setIsDeleting(false);
+                  }
+                }}
+                className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-red-200 transition duration-150 cursor-pointer active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                Simpan
+                {isDeleting ? (
+                  <span className="flex items-center gap-2 italic">Menghapus...</span>
+                ) : (
+                  <>Ya, Hapus <Trash2 className="h-3.5 w-3.5" /></>
+                )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST NOTIFICATION */}
+      {showSuccessToast && (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-6 fade-in duration-500">
+          <div className="bg-slate-950 text-white pr-6 pl-4 py-3 rounded-2xl shadow-2xl flex items-center gap-4 border border-white/10 backdrop-blur-md">
+            <div className="h-10 w-10 bg-emerald-500 rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <CheckCircle2 className="h-6 w-6 text-white" />
+            </div>
+            <div>
+               <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest leading-none mb-1">Operasi Berhasil</p>
+               <p className="text-[11px] font-bold text-slate-200 leading-none">{toastMessage}</p>
             </div>
           </div>
         </div>
@@ -683,7 +795,7 @@ export function Kontak(props: KontakProps) {
             {/* Modal Header Controls */}
             <div className="w-full flex items-center justify-between pb-4 border-b border-slate-800 mb-6">
               <div className="flex items-center gap-2 text-left">
-                <ShieldCheck className="h-5 w-5 text-emerald-500" />
+                <QrCode className="h-5 w-5 text-emerald-500" />
                 <div>
                   <h3 className="text-xs font-black text-white uppercase tracking-tight">QR-ID Card Verifikator</h3>
                   <p className="text-[10px] text-slate-400 font-mono">Fasilitas Keaslian Pejabat Koperasi</p>
@@ -693,7 +805,6 @@ export function Kontak(props: KontakProps) {
                 type="button"
                 onClick={() => {
                   setSelectedIdCardContact(null);
-                  setIsCardFlipped(false);
                 }}
                 className="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white p-1.5 rounded-full transition cursor-pointer"
               >
@@ -701,135 +812,43 @@ export function Kontak(props: KontakProps) {
               </button>
             </div>
 
-            {/* Flipped Card Component */}
-            <div className="w-[305px] h-[450px] [perspective:1000px] mb-6">
-              <div 
-                className={`relative w-full h-full transition-transform duration-700 [transform-style:preserve-3d] ${
-                  isCardFlipped ? '[transform:rotateY(180deg)]' : ''
-                }`}
-              >
-                {/* ID-CARD FRONT SIDE */}
-                <div className="absolute w-full h-full rounded-2xl [backface-visibility:hidden] border border-slate-200 overflow-hidden shadow-2xl bg-white flex flex-col justify-between py-6 px-4 text-slate-950 select-none">
-                  {/* Red and White Stripe Banner */}
-                  <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-r from-red-600 via-rose-500 to-white flex items-center px-4">
-                    <span className="text-[7px] font-black text-white/90 tracking-widest leading-none font-mono uppercase">KOPERASI INDONESIA</span>
-                  </div>
-                  
-                  {/* Card Corporate Brand */}
-                  <div className="mt-2 text-center">
-                    <p className="text-[9px] font-extrabold text-red-650 tracking-[0.2em] uppercase font-mono leading-none">Kartu Identitas Resmi</p>
-                    <h2 className="text-xs font-black text-slate-900 tracking-tight leading-tight uppercase mt-1">
-                      {props.koperasiName || "Financial System"}
-                    </h2>
-                    <p className="text-[7px] text-slate-400 font-mono mt-0.5 uppercase tracking-wide">Digital Ledger Authentication System</p>
-                    <div className="w-12 h-[1px] bg-red-600 mx-auto mt-2"></div>
-                  </div>
-
-                  {/* Profile Frame with active indicator */}
-                  <div className="my-2 flex flex-col items-center">
-                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-red-50 to-slate-100 border-2 border-red-500/30 p-1 shadow-sm relative flex items-center justify-center overflow-hidden">
-                      <div className="w-full h-full bg-slate-900 rounded-xl flex items-center justify-center text-white relative">
-                        {selectedIdCardContact.foto ? (
-                          <img
-                            src={selectedIdCardContact.foto}
-                            alt={selectedIdCardContact.nama}
-                            className="w-full h-full object-cover rounded-xl"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <>
-                            <Users className="h-10 w-10 text-slate-400/80" />
-                            <span className="absolute inset-0 flex items-center justify-center text-xl font-black text-white opacity-10 uppercase tracking-widest font-sans">
-                              {selectedIdCardContact.nama.slice(0, 2)}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      
-                      {/* Authentic stamp ribbon */}
-                      <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-white text-[8px] text-white font-extrabold animate-pulse" title="Status Aktif Terverifikasi">
-                        ✓
-                      </div>
-                    </div>
-
-                    <div className="text-center mt-2.5 space-y-1">
-                      <h4 className="text-sm font-black text-slate-900 leading-tight tracking-tight uppercase px-1">{selectedIdCardContact.nama}</h4>
-                      <p className="text-[10px] font-extrabold text-red-650 font-sans tracking-wide leading-none">{selectedIdCardContact.jabatanAtauPerusahaan || "Staff Operasional"}</p>
-                      
-                      <div className="inline-flex mt-1.5 px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-[8px] font-bold text-slate-500 font-mono tracking-widest uppercase">
-                        ID: {selectedIdCardContact.id}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Decorative stamp seal / hologram details */}
-                  <div className="border-t border-dashed border-slate-200 pt-3 flex items-center justify-between text-left">
-                    <div className="flex items-center gap-1">
-                      <div className="w-6 h-6 rounded-full bg-slate-100 border border-red-500/40 flex items-center justify-center shrink-0">
-                        <ShieldCheck className="h-3.5 w-3.5 text-red-600" />
-                      </div>
-                      <div className="text-[7px] leading-tight shrink-0">
-                        <p className="font-extrabold text-slate-900 font-mono uppercase tracking-tighter">AUTHENTIC SECURE</p>
-                        <p className="text-[6px] text-slate-400 font-mono font-medium">DocRef: {props.koperasiId || "KDMP"}-{selectedIdCardContact.id}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="text-right text-[7px] leading-tight max-w-32">
-                      <p className="font-extrabold text-slate-400 tracking-tighter uppercase">Authorized Signature</p>
-                      <p className="font-black text-slate-800 underline uppercase mt-2">M. Salim Priadi</p>
-                      <p className="text-[6px] text-slate-400 font-medium">Ketua Umum Koperasi</p>
-                    </div>
-                  </div>
+            {/* Simplified QR Display */}
+            <div className="w-full flex flex-col items-center mb-8">
+              <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-200">
+                <div className="text-center mb-4">
+                  <h3 className="text-xs font-black text-rose-600 uppercase tracking-[0.2em] font-mono leading-none">Keamanan & Verifikasi</h3>
+                  <p className="text-[10px] text-slate-500 font-sans tracking-tight mt-1">Pindai QR ini untuk konfirmasi status aktif</p>
                 </div>
 
-                {/* ID-CARD BACK SIDE */}
-                <div className="absolute w-full h-full rounded-2xl [backface-visibility:hidden] [transform:rotateY(180deg)] border border-red-650 overflow-hidden shadow-2xl bg-gradient-to-b from-slate-950 to-slate-900 flex flex-col justify-between py-6 px-4 text-white text-center select-none">
-                  <div className="text-center space-y-1">
-                    <h3 className="text-[10px] font-black text-red-500 uppercase tracking-[0.2em] font-mono leading-none">Keamanan &amp; Verifikasi Digital</h3>
-                    <p className="text-[8px] text-slate-400 font-sans tracking-wide">Pindai QR ini untuk konfirmasi status aktif pejabat</p>
-                    <div className="w-12 h-[1px] bg-red-600 mx-auto my-1.5"></div>
-                  </div>
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=991b1b&data=${encodeURIComponent(
+                      `${window.location.origin}/?verify_tenant=${props.koperasiId || "kdmp"}&verify_id=${selectedIdCardContact.id}&verify_name=${encodeURIComponent(selectedIdCardContact.nama)}&verify_role=${encodeURIComponent(selectedIdCardContact.jabatanAtauPerusahaan || "Staff")}&verify_status=${selectedIdCardContact.status}`
+                    )}`}
+                    alt="QR ID Verifikator"
+                    className="w-48 h-48 object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
 
-                  {/* QR Core Element */}
-                  <div className="my-3 flex flex-col items-center">
-                    <div className="p-2.5 bg-white rounded-xl border border-slate-750 inline-block shadow-lg">
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&color=991b1b&data=${encodeURIComponent(
-                          `${window.location.origin}/?verify_tenant=${props.koperasiId || "kdmp"}&verify_id=${selectedIdCardContact.id}&verify_name=${encodeURIComponent(selectedIdCardContact.nama)}&verify_role=${encodeURIComponent(selectedIdCardContact.jabatanAtauPerusahaan || "Staff")}&verify_status=${selectedIdCardContact.status}`
-                        )}`}
-                        alt="QR ID Verifikator"
-                        className="w-36 h-36 object-contain"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                    <p className="text-[8px] font-mono text-red-400 font-bold tracking-widest uppercase mt-2.5">
-                      QR CODE AUTH SECURE
-                    </p>
-                  </div>
-
-                  {/* Operational Notes removed */}
+                <div className="text-center mt-4">
+                  <p className="text-[9px] font-mono text-slate-400 font-bold tracking-widest uppercase">
+                    ID: {selectedIdCardContact.id} - {selectedIdCardContact.nama}
+                  </p>
                 </div>
               </div>
             </div>
 
             {/* Modal Bottom Actions */}
-            <div className="w-full grid grid-cols-2 gap-3.5 mt-2">
-              <button
-                type="button"
-                onClick={() => setIsCardFlipped(!isCardFlipped)}
-                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[10px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <ArrowLeftRight className="h-3.5 w-3.5" /> Balik Kartu
-              </button>
-              
+            <div className="w-full">
               <button
                 type="button"
                 onClick={() => {
                   window.print();
                 }}
-                className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-extrabold text-[10px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-red-500/10"
+                className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs uppercase tracking-[0.2em] rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer shadow-xl shadow-rose-200"
               >
-                <Printer className="h-3.5 w-3.5" /> Cetak ID Card
+                <Printer className="h-4 w-4" /> Cetak QR Code
               </button>
             </div>
 

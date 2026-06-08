@@ -3156,12 +3156,21 @@ export default function App() {
     setKontakLainData(prev => [...prev, kontak]);
   };
 
-  const handleUpdateKontakLain = (kontak: KontakLain) => {
-    setKontakLainData(prev => prev.map(c => c.id === kontak.id ? kontak : c));
+  const handleUpdateKontakLain = (kontak: KontakLain, originalId?: string) => {
+    const tid = originalId || kontak.id;
+    setKontakLainData(prev => prev.map(c => c.id === tid ? kontak : c));
   };
 
   const handleDeleteKontakLain = (id: string) => {
+    if (!id) return;
     setKontakLainData(prev => prev.filter(c => c.id !== id));
+    
+    // Explicitly delete from cloud if available to ensure sync reliability
+    if (koperasiId && cloudStatus.kontak && accessMode !== "login") {
+      deleteDoc(doc(db, "koperasi", koperasiId, "kontakLain", id)).catch(err => {
+        console.error("Cloud delete error:", err);
+      });
+    }
   };
 
   // MANAGE BILLING / TAGIHAN MEMBERS
