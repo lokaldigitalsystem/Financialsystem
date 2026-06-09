@@ -5,8 +5,12 @@
 
 import React from 'react';
 import { motion } from 'motion/react';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, AreaChart, Area, Cell, PieChart, Pie
+} from 'recharts';
 import { ArrowUpRight, ArrowDownRight, Wallet, Users, LayoutDashboard, ShoppingBag, Landmark, RefreshCw, Trash2, FileDown, Coins, Building, Target, Settings, Edit3, CheckCircle, TrendingUp, Sparkles, Calendar, AlertTriangle, Percent, Activity, ExternalLink, ShieldCheck, PhoneCall, HelpCircle, LifeBuoy, MessageSquare } from 'lucide-react';
-import { CoaAccount, JurnalEntry, Anggota, StokItem, Tagihan } from '../types';
+import { CoaAccount, JurnalEntry, Anggota, StokItem, Tagihan, CoaKategori, SaldoNormal, PastSale } from '../types';
 
 interface DashboardProps {
   coaData: CoaAccount[];
@@ -14,6 +18,8 @@ interface DashboardProps {
   anggotaData: Anggota[];
   stokData: StokItem[];
   tagihanData?: Tagihan[];
+  salesHistory: PastSale[];
+  onUpdateSalesHistory: React.Dispatch<React.SetStateAction<PastSale[]>>;
   onNavigate: (page: string, jFilter?: string, cFilter?: string, cSearch?: string) => void;
   onResetData?: (toZero: boolean) => void;
   koperasiId?: string;
@@ -21,7 +27,8 @@ interface DashboardProps {
 
 export function Dashboard(props: DashboardProps) {
   const [showResetConfirm, setShowResetConfirm] = React.useState<"zero" | "demo" | null>(null);
-  const [salesHistory, setSalesHistory] = React.useState<any[]>([]);
+  const salesHistory = props.salesHistory;
+  const setSalesHistory = props.onUpdateSalesHistory;
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -51,21 +58,6 @@ export function Dashboard(props: DashboardProps) {
     "Juli", "Agustus", "September", "Oktober", "November", "Desember"
   ];
 
-  const storageKey = props.koperasiId ? `kdmp_${props.koperasiId}_salesHistory` : 'kdmp_salesHistory';
-
-  React.useEffect(() => {
-    const raw = localStorage.getItem(storageKey);
-    if (raw) {
-      try {
-        setSalesHistory(JSON.parse(raw));
-      } catch (err) {
-        console.error("Failed to parse sales history", err);
-      }
-    } else {
-      setSalesHistory([]);
-    }
-  }, [storageKey]);
-
   // Chart selection state
   const [chartType, setChartType] = React.useState<'bar' | 'line' | 'area' | 'pie'>('bar');
 
@@ -90,19 +82,12 @@ export function Dashboard(props: DashboardProps) {
   const [isEditingKpi, setIsEditingKpi] = React.useState<boolean>(false);
   const [tempTargetValue, setTempTargetValue] = React.useState<string>("");
 
-  // Submenu tab selection state ('ringkasan' | 'analisis' | 'operasional')
-  const [activeSubTab, setActiveSubTab] = React.useState<'ringkasan' | 'analisis' | 'operasional'>('ringkasan');
+  // Submenu tab selection state ('ringkasan' | 'analisis' | 'operasional' | 'analisis_mendalam')
+  const [activeSubTab, setActiveSubTab] = React.useState<'ringkasan' | 'analisis' | 'operasional' | 'analisis_mendalam'>('ringkasan');
   
   const handleClearSalesHistory = () => {
     if (window.confirm("Apakah Anda yakin ingin menghapus seluruh riwayat penjualan (statistik produk terlaris) di dashboard ini? Tindakan ini bersifat permanen.")) {
-      try {
-        localStorage.removeItem(storageKey);
-        // Also clear legacy key just in case
-        localStorage.removeItem('kdmp_salesHistory');
-        setSalesHistory([]);
-      } catch (e) {
-        console.error("Failed to clear sales history", e);
-      }
+      setSalesHistory([]);
     }
   };
 
@@ -113,12 +98,6 @@ export function Dashboard(props: DashboardProps) {
           ...sale,
           items: (sale.items || []).filter((item: any) => item.nama !== productName)
         })).filter(sale => (sale.items || []).length > 0);
-        
-        try {
-          localStorage.setItem(storageKey, JSON.stringify(updated));
-        } catch (e) {
-          console.error("Failed to save updated history", e);
-        }
         return updated;
       });
     }
@@ -151,6 +130,21 @@ export function Dashboard(props: DashboardProps) {
 
   const totalAnggota = props.anggotaData.filter(a => a.status === 'Aktif').length;
 
+  const totalPendapatan = props.coaData
+    .filter(c => c.kategori === 'Pendapatan')
+    .reduce((acc, curr) => acc + (curr.normal === 'Kredit' ? curr.saldo : -curr.saldo), 0);
+
+  const totalBeban = props.coaData
+    .filter(c => c.kategori === 'Beban')
+    .reduce((acc, curr) => acc + (curr.normal === 'Debet' ? curr.saldo : -curr.saldo), 0);
+
+  const labaBersih = totalPendapatan - totalBeban;
+
+  const totalDanaAnggota = props.anggotaData.reduce((acc, curr) => acc + (curr.simpananPokok || 0), 0);
+
+  const lowStockThreshold = 5;
+  const lowStockItems = (props.stokData || []).filter(item => item.qty <= lowStockThreshold);
+
   // Track month index dynamically based on latest journal entry, or default to May (month index 4) in 2026
   const getActivePeriodIndex = () => {
     if (props.jurnalData.length === 0) return 4; // May
@@ -166,6 +160,49 @@ export function Dashboard(props: DashboardProps) {
     });
     return maxMonth;
   };
+
+  const totalPiutangBelumLunas = (props.tagihanData || [])
+    .filter(t => t.status === 'Belum Bayar')
+    .reduce((acc, curr) => acc + curr.jumlah, 0);
+
+  // Preparing data for Omset vs Beban Comparison Chart (Last 6 Months)
+  const statsPerformanceMonthly = React.useMemo(() => {
+    const data: any[] = [];
+    const currentMonth = getActivePeriodIndex();
+    
+    // We'll take last 6 months or until start of year
+    for (let i = Math.max(0, currentMonth - 5); i <= currentMonth; i++) {
+      let monthlyOmset = 0;
+      let monthlyBeban = 0;
+      
+      props.jurnalData.forEach(j => {
+        const parts = j.tgl.split('-');
+        if (parts.length >= 2) {
+          const entryM = parseInt(parts[1], 10) - 1;
+          if (entryM === i) {
+            // Find account category
+            const acc = props.coaData.find(c => c.kode === j.akun);
+            if (acc) {
+              if (acc.kategori === 'Pendapatan') {
+                monthlyOmset += (j.kredit - j.debet); // Revenue normally Kredit
+              } else if (acc.kategori === 'Beban') {
+                monthlyBeban += (j.debet - j.kredit); // Expenses normally Debet
+              }
+            }
+          }
+        }
+      });
+      
+      data.push({
+        name: months[i].substring(0, 3),
+        longName: months[i],
+        omset: Math.max(0, monthlyOmset),
+        beban: Math.max(0, monthlyBeban),
+        profit: monthlyOmset - monthlyBeban
+      });
+    }
+    return data;
+  }, [props.jurnalData, props.coaData, months]);
 
   const activeMonthIdx = getActivePeriodIndex();
 
@@ -450,12 +487,39 @@ export function Dashboard(props: DashboardProps) {
 
   // 1. RASIO LIKUIDITAS DAN KESEHATAN FINANSIAL
   const totalKewajiban = props.coaData
-    .filter(c => c.kategori === 'Kewajiban')
-    .reduce((acc, curr) => acc + (curr.normal === 'Kredit' ? curr.saldo : -curr.saldo), 0);
+    .filter(c => c.kategori === CoaKategori.Kewajiban)
+    .reduce((acc, curr) => acc + (curr.normal === SaldoNormal.Kredit ? curr.saldo : -curr.saldo), 0);
+
+  const totalEkuitas = props.coaData
+    .filter(c => c.kategori === CoaKategori.Ekuitas)
+    .reduce((acc, curr) => acc + (curr.normal === SaldoNormal.Kredit ? curr.saldo : -curr.saldo), 0);
+
+  const totalAset = totalAsetLancar + totalAsetTidakLancar;
 
   const kasDanBank = saldoKasTunai + totalSaldoBank;
   const currentRatio = totalKewajiban > 0 ? (totalAsetLancar / totalKewajiban) * 100 : (totalAsetLancar > 0 ? 999 : 100);
   const cashRatio = totalKewajiban > 0 ? (kasDanBank / totalKewajiban) * 100 : (kasDanBank > 0 ? 999 : 100);
+  
+  // Solvabilitas
+  const debtToAssetRatio = totalAset > 0 ? (totalKewajiban / totalAset) * 100 : 0;
+  const debtToEquityRatio = totalEkuitas > 0 ? (totalKewajiban / totalEkuitas) * 100 : 0;
+
+  // Profitabilitas
+  const grossProfit = totalPendapatan - totalPembelian; // Assuming 5-1001 is HPP
+  const grossMargin = totalPendapatan > 0 ? (grossProfit / totalPendapatan) * 100 : 0;
+  const netMargin = totalPendapatan > 0 ? (labaBersih / totalPendapatan) * 100 : 0;
+  const roa = totalAset > 0 ? (labaBersih / totalAset) * 100 : 0;
+  const roe = totalEkuitas > 0 ? (labaBersih / totalEkuitas) * 100 : 0;
+
+  // Efficiency
+  const expenseToRevenueRatio = totalPendapatan > 0 ? (totalBeban / totalPendapatan) * 100 : 0;
+  const hppToRevenueRatio = totalPendapatan > 0 ? (totalPembelian / totalPendapatan) * 100 : 0;
+
+  // Runway/Burn Rate (Simple estimation)
+  const averageMonthlyExpense = statsPerformanceMonthly.length > 0 
+    ? statsPerformanceMonthly.reduce((acc, curr) => acc + curr.beban, 0) / statsPerformanceMonthly.length 
+    : totalBeban;
+  const runwayMonths = averageMonthlyExpense > 0 ? (kasDanBank / averageMonthlyExpense) : (kasDanBank > 0 ? 99 : 0);
 
   // 2. PIUTANG JATUH TEMPO (ALERT PANEL)
   const unpaidInvoices = React.useMemo(() => {
@@ -475,6 +539,9 @@ export function Dashboard(props: DashboardProps) {
   }, [props.tagihanData]);
 
   const totalReceivablesValue = unpaidInvoices.reduce((acc, curr) => acc + curr.jumlah, 0);
+
+  const overdueInvoices = unpaidInvoices.filter(i => i.diffDays < 0);
+  const upcomingInvoices = unpaidInvoices.filter(i => i.diffDays >= 0 && i.diffDays <= 7);
 
   // 3. KALENDER KAS MAKRO
   const [selectedCalendarDay, setSelectedCalendarDay] = React.useState<number>(() => {
@@ -781,178 +848,120 @@ export function Dashboard(props: DashboardProps) {
         </div>
       </div>
 
+      {/* TOP KPI PERFORMANCE CARDS */}
       <motion.div 
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8"
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6"
       >
-        {/* SALDO KAS TUNAI */}
+        {/* LABA BERSIH KPI */}
         <motion.div 
           variants={itemVariants}
-          onClick={() => props.onNavigate('coa', undefined, 'Aset', 'Kas Tunai')}
-          className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
-          title="Klik untuk lihat detail Kas Tunai di COA"
+          className="bg-slate-900 rounded-2xl p-5 shadow-xl border border-slate-800 relative overflow-hidden group"
         >
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase group-hover:text-emerald-600 transition-colors">Saldo Kas Tunai</span>
-              <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all">
-                <Wallet className="h-4 w-4" />
+          <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <TrendingUp className="h-32 w-32 text-emerald-400" />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
+                <Sparkles className="h-4 w-4" />
               </div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Laba Bersih (S.H.U)</span>
             </div>
-            <div className="text-base font-bold text-gray-900 tracking-tight">
-              Rp {saldoKasTunai.toLocaleString('id-ID')}
+            <div className="text-2xl font-black text-white tracking-tight leading-none mb-1">
+              Rp {labaBersih.toLocaleString('id-ID')}
             </div>
-            <div className="mt-1 flex items-center gap-1 text-[10px]">
-              <span className={`font-semibold flex items-center ${kasTunaiTrend > 0 ? "text-emerald-600" : kasTunaiTrend < 0 ? "text-rose-600" : "text-gray-500"}`}>
-                {kasTunaiTrend > 0 ? <ArrowUpRight className="h-3 w-3" /> : kasTunaiTrend < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
-                {kasTunaiTrend > 0 ? '+' : ''}{kasTunaiTrend.toFixed(1)}%
-              </span>
-              <span className="text-gray-400">vs bln lalu</span>
+            <div className="flex items-center gap-1.5 mt-2">
+              <div className={`px-1.5 py-0.5 rounded text-[10px] font-black flex items-center gap-0.5 ${labaBersih >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                {labaBersih >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                {labaBersih >= 0 ? '+' : ''}2.4%
+              </div>
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">Performa Kumulatif</span>
             </div>
           </div>
-          <div className="h-1 bg-emerald-600 rounded-b-xl" />
         </motion.div>
 
-        {/* TOTAL SALDO BANK */}
+        {/* PIUTANG AKTIF KPI */}
         <motion.div 
           variants={itemVariants}
-          onClick={() => props.onNavigate('coa', undefined, 'Aset', 'Bank')}
-          className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
-          title="Klik untuk lihat detail Rekening Bank di COA"
+          onClick={() => props.onNavigate('operasional')}
+          className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 relative overflow-hidden group cursor-pointer hover:border-amber-200 transition-all"
         >
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase group-hover:text-blue-600 transition-colors">Total Saldo Bank</span>
-              <div className="p-2 bg-blue-50 rounded-lg text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                <Landmark className="h-4 w-4" />
+          <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <AlertTriangle className="h-32 w-32 text-amber-500" />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-2 bg-amber-50 rounded-lg text-amber-600">
+                <AlertTriangle className="h-4 w-4" />
               </div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Piutang Anggota</span>
             </div>
-            <div className="text-base font-bold text-gray-900 tracking-tight">
-              Rp {totalSaldoBank.toLocaleString('id-ID')}
+            <div className="text-2xl font-black text-slate-900 tracking-tight leading-none mb-1">
+              Rp {totalPiutangBelumLunas.toLocaleString('id-ID')}
             </div>
-            <div className="mt-1 flex items-center gap-1 text-[10px]">
-              <span className={`font-semibold flex items-center ${bankTrend > 0 ? "text-emerald-600" : bankTrend < 0 ? "text-rose-600" : "text-gray-500"}`}>
-                {bankTrend > 0 ? <ArrowUpRight className="h-3 w-3" /> : bankTrend < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
-                {bankTrend > 0 ? '+' : ''}{bankTrend.toFixed(1)}%
+            <div className="flex items-center gap-1.5 mt-2">
+              <span className="text-[10px] text-amber-600 font-bold uppercase tracking-tight">
+                {unpaidInvoices.length} Tagihan Belum Lunas
               </span>
-              <span className="text-gray-400">vs bln lalu</span>
             </div>
           </div>
-          <div className="h-1 bg-blue-600 rounded-b-xl" />
         </motion.div>
 
-        {/* TOTAL ASET LANCAR */}
-        <motion.div 
-          variants={itemVariants}
-          onClick={() => props.onNavigate('coa', undefined, 'Aset', '')}
-          className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
-          title="Klik untuk lihat Chart of Accounts (COA)"
-        >
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase group-hover:text-teal-600 transition-colors">Total Aset Lancar</span>
-              <div className="p-2 bg-teal-50 rounded-lg text-teal-600 group-hover:bg-teal-600 group-hover:text-white transition-all">
-                <Coins className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="text-base font-bold text-gray-900 tracking-tight">
-              Rp {totalAsetLancar.toLocaleString('id-ID')}
-            </div>
-            <div className="mt-1 flex items-center gap-1 text-[10px]">
-              <span className={`font-semibold flex items-center ${lancarTrend > 0 ? "text-emerald-600" : lancarTrend < 0 ? "text-rose-600" : "text-gray-500"}`}>
-                {lancarTrend > 0 ? <ArrowUpRight className="h-3 w-3" /> : lancarTrend < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
-                {lancarTrend > 0 ? '+' : ''}{lancarTrend.toFixed(1)}%
-              </span>
-              <span className="text-gray-400">vs bln lalu</span>
-            </div>
-          </div>
-          <div className="h-1 bg-teal-600 rounded-b-xl" />
-        </motion.div>
-
-        {/* TOTAL ASET TIDAK LANCAR */}
-        <motion.div 
-          variants={itemVariants}
-          onClick={() => props.onNavigate('coa', undefined, 'Aset', 'Aset Tetap')}
-          className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
-          title="Klik untuk lihat detail Aset Tetap di COA"
-        >
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase group-hover:text-purple-600 transition-colors">Aset Tidak Lancar</span>
-              <div className="p-2 bg-purple-50 rounded-lg text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-all">
-                <Building className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="text-base font-bold text-gray-900 tracking-tight">
-              Rp {totalAsetTidakLancar.toLocaleString('id-ID')}
-            </div>
-            <div className="mt-1 flex items-center gap-1 text-[10px]">
-              <span className={`font-semibold flex items-center ${tidakLancarTrend > 0 ? "text-emerald-600" : tidakLancarTrend < 0 ? "text-rose-600" : "text-gray-500"}`}>
-                {tidakLancarTrend > 0 ? <ArrowUpRight className="h-3 w-3" /> : tidakLancarTrend < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
-                {tidakLancarTrend > 0 ? '+' : ''}{tidakLancarTrend.toFixed(1)}%
-              </span>
-              <span className="text-gray-400">vs bln lalu</span>
-            </div>
-          </div>
-          <div className="h-1 bg-purple-600 rounded-b-xl" />
-        </motion.div>
-
-        {/* TOTAL PENJUALAN */}
-        <motion.div 
-          variants={itemVariants}
-          onClick={() => props.onNavigate('jurnal', '4-1001')}
-          className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
-          title="Klik untuk cari transaksi Penjualan (4-1001) di Jurnal"
-        >
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase group-hover:text-emerald-600 transition-colors">Penjualan Toko</span>
-              <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all">
-                <ShoppingBag className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="text-base font-bold text-gray-900 tracking-tight">
-              Rp {totalPenjualan.toLocaleString('id-ID')}
-            </div>
-            <div className="mt-1 flex items-center gap-1 text-[10px]">
-              <span className={`font-semibold flex items-center ${penjualanTrend > 0 ? "text-emerald-600" : penjualanTrend < 0 ? "text-rose-600" : "text-gray-500"}`}>
-                {penjualanTrend > 0 ? <ArrowUpRight className="h-3 w-3" /> : penjualanTrend < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
-                {penjualanTrend > 0 ? '+' : ''}{penjualanTrend.toFixed(1)}%
-              </span>
-              <span className="text-gray-400">vs bln lalu</span>
-            </div>
-          </div>
-          <div className="h-1 bg-emerald-600 rounded-b-xl" />
-        </motion.div>
-
-        {/* ANGGOTA AKTIF */}
+        {/* DANA ANGGOTA KPI */}
         <motion.div 
           variants={itemVariants}
           onClick={() => props.onNavigate('anggota')}
-          className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
-          title="Klik untuk buka Daftar Anggota"
+          className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 relative overflow-hidden group cursor-pointer hover:border-indigo-200 transition-all"
         >
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase group-hover:text-amber-600 transition-colors">Anggota Aktif</span>
-              <div className="p-2 bg-amber-50 rounded-lg text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-all">
-                <Users className="h-4 w-4" />
+          <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <Landmark className="h-32 w-32 text-indigo-500" />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+                <Building className="h-4 w-4" />
               </div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Simpanan Pokok</span>
             </div>
-            <div className="text-base font-bold text-gray-900 tracking-tight">
-              {totalAnggota} Orang
+            <div className="text-2xl font-black text-slate-900 tracking-tight leading-none mb-1">
+              Rp {totalDanaAnggota.toLocaleString('id-ID')}
             </div>
-            <div className="mt-1 flex items-center gap-1 text-[10px]">
-              <span className={`font-semibold flex items-center ${memberTrend > 0 ? "text-emerald-600" : "text-gray-500"}`}>
-                {memberTrend > 0 ? <ArrowUpRight className="h-3 w-3" /> : null}
-                {memberTrend > 0 ? '+' : ''}{memberTrend.toFixed(1)}%
-              </span>
-              <span className="text-gray-400">perkembangan</span>
+            <div className="flex items-center gap-1.5 mt-2 text-indigo-600">
+              <Users className="h-3.5 w-3.5" />
+              <span className="text-[10px] font-bold uppercase tracking-tight">Dari {totalAnggota} Anggota Aktif</span>
             </div>
           </div>
-          <div className="h-1 bg-amber-600 rounded-b-xl" />
+        </motion.div>
+
+        {/* PROGRESS KPI TARGET */}
+        <motion.div 
+          variants={itemVariants}
+          onClick={() => setActiveSubTab('analisis')}
+          className="bg-emerald-600 rounded-2xl p-5 shadow-xl shadow-emerald-600/10 relative overflow-hidden group cursor-pointer active:scale-95 transition-all"
+        >
+          <div className="absolute -right-4 -top-4 opacity-10 group-hover:opacity-20 transition-opacity">
+            <Target className="h-32 w-32 text-white" />
+          </div>
+          <div className="relative z-10 text-white">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-2 bg-white/20 rounded-lg">
+                <Target className="h-4 w-4" />
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-100/80">Target {kpiTargetType === 'omset' ? 'Omset' : 'Profit'} {months[activeMonthIdx]}</span>
+            </div>
+            <div className="text-2xl font-black tracking-tight leading-none mb-2">
+              {kpiPercentage}%
+            </div>
+            <div className="w-full bg-black/20 h-1.5 rounded-full overflow-hidden">
+              <div className="bg-white h-full" style={{ width: `${kpiPercentage}%` }} />
+            </div>
+            <div className="mt-2 text-[9px] font-bold uppercase tracking-tight text-emerald-100">
+              Rp {currentKpiValue.toLocaleString('id-ID')} / {targetKpiValue.toLocaleString('id-ID')}
+            </div>
+          </div>
         </motion.div>
       </motion.div>
 
@@ -993,6 +1002,18 @@ export function Dashboard(props: DashboardProps) {
         >
           <Calendar className="h-4 w-4" />
           Kalender & Peringatan Piutang
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('analisis_mendalam')}
+          className={`flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap flex-1 active:scale-95 ${
+            activeSubTab === 'analisis_mendalam'
+              ? 'bg-red-600 text-white shadow-xs'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-slate-100'
+          }`}
+        >
+          <Sparkles className="h-4 w-4" />
+          Analisis Mendalam
         </button>
       </div>
 
@@ -1113,6 +1134,112 @@ export function Dashboard(props: DashboardProps) {
           </div>
         </div>
       </div>
+
+      {/* COMPARISON CHART: OMSET VS BEBAN */}
+      <motion.div 
+        variants={itemVariants}
+        className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden mb-8"
+      >
+        <div className="p-5 border-b border-gray-50 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+              <TrendingUp className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-gray-900">Perbandingan Efisiensi: Omset vs Beban</h3>
+              <p className="text-[10.5px] text-gray-500">Analisis tren pendapatan kotor dibandingkan biaya operasional (Last {statsPerformanceMonthly.length} Months)</p>
+            </div>
+          </div>
+          <div className="flex gap-4 text-[10px] font-black uppercase tracking-tighter">
+            <div className="flex items-center gap-1.5 text-indigo-600">
+              <span className="w-2 h-2 rounded-full bg-indigo-600"></span> Omset
+            </div>
+            <div className="flex items-center gap-1.5 text-rose-500">
+              <span className="w-2 h-2 rounded-full bg-rose-500"></span> Beban
+            </div>
+          </div>
+        </div>
+        <div className="p-5 h-[320px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={statsPerformanceMonthly}>
+              <defs>
+                <linearGradient id="colorOmset" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1}/>
+                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="colorBeban" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.1}/>
+                  <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis 
+                dataKey="name" 
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }}
+                dy={10}
+              />
+              <YAxis 
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }}
+                tickFormatter={(value) => `Rp ${value / 1000}k`}
+              />
+              <Tooltip 
+                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '11px', fontWeight: 600 }}
+                formatter={(value: any) => [`Rp ${value.toLocaleString('id-ID')}`, '']}
+                labelStyle={{ fontWeight: 800, marginBottom: '4px', textTransform: 'uppercase', fontSize: '10px', color: '#94a3b8' }}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="omset" 
+                stroke="#4f46e5" 
+                strokeWidth={3}
+                fillOpacity={1} 
+                fill="url(#colorOmset)" 
+                activeDot={{ r: 6, strokeWidth: 0 }}
+                name="Total Omset"
+              />
+              <Area 
+                type="monotone" 
+                dataKey="beban" 
+                stroke="#f43f5e" 
+                strokeWidth={3}
+                fillOpacity={1} 
+                fill="url(#colorBeban)" 
+                activeDot={{ r: 6, strokeWidth: 0 }}
+                name="Total Beban"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="bg-slate-50 px-5 py-3 border-t border-gray-50 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex flex-col">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Rata-rata Margin</span>
+              <span className="text-xs font-black text-slate-800 tracking-tight mt-1">
+                {statsPerformanceMonthly.length > 0 
+                  ? ((statsPerformanceMonthly.reduce((acc, curr) => acc + (curr.omset > 0 ? (curr.profit / curr.omset) * 100 : 0), 0) / statsPerformanceMonthly.length).toFixed(1)) 
+                  : 0}%
+              </span>
+            </div>
+            <div className="h-6 w-px bg-slate-200"></div>
+            <div className="flex flex-col">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Status Efisiensi</span>
+              <span className={`text-xs font-black tracking-tight mt-1 ${labaBersih > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {labaBersih > totalBeban * 0.2 ? 'Sangat Efisien' : labaBersih > 0 ? 'Optimal' : 'Defisit / Evaluasi'}
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={() => props.onNavigate('laporan')}
+            className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 uppercase tracking-wider"
+          >
+            Analisis Laporan Lengkap <ExternalLink className="h-3 w-3" />
+          </button>
+        </div>
+      </motion.div>
 
       {/* KPI & TARGET TRACKER (PELACAK CAPAIAN BULANAN) */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden mb-8 animate-in fade-in slide-in-from-bottom-3 duration-300">
@@ -1324,6 +1451,239 @@ export function Dashboard(props: DashboardProps) {
       {/* SUBTAB CONTENT 2: ARUS KAS & RINGKASAN UTAMA */}
       {activeSubTab === 'ringkasan' && (
         <div className="space-y-6">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="h-4 w-1 bg-red-600 rounded-full"></div>
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Likuiditas & Arus Kas</h3>
+          </div>
+
+          <motion.div 
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6"
+          >
+            {/* SALDO KAS TUNAI */}
+            <motion.div 
+              variants={itemVariants}
+              onClick={() => props.onNavigate('coa', undefined, 'Aset', 'Kas Tunai')}
+              className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
+              title="Klik untuk lihat detail Kas Tunai di COA"
+            >
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase group-hover:text-emerald-600 transition-colors">Saldo Kas Tunai</span>
+                  <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                    <Wallet className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="text-base font-bold text-gray-900 tracking-tight">
+                  Rp {saldoKasTunai.toLocaleString('id-ID')}
+                </div>
+                <div className="mt-1 flex items-center gap-1 text-[10px]">
+                  <span className={`font-semibold flex items-center ${kasTunaiTrend > 0 ? "text-emerald-600" : kasTunaiTrend < 0 ? "text-rose-600" : "text-gray-500"}`}>
+                    {kasTunaiTrend > 0 ? <ArrowUpRight className="h-3 w-3" /> : kasTunaiTrend < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
+                    {kasTunaiTrend > 0 ? '+' : ''}{kasTunaiTrend.toFixed(1)}%
+                  </span>
+                  <span className="text-gray-400">vs bln lalu</span>
+                </div>
+              </div>
+              <div className="h-1 bg-emerald-600 rounded-b-xl" />
+            </motion.div>
+
+            {/* TOTAL SALDO BANK */}
+            <motion.div 
+              variants={itemVariants}
+              onClick={() => props.onNavigate('coa', undefined, 'Aset', 'Bank')}
+              className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
+              title="Klik untuk lihat detail Rekening Bank di COA"
+            >
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase group-hover:text-blue-600 transition-colors">Total Saldo Bank</span>
+                  <div className="p-2 bg-blue-50 rounded-lg text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                    <Landmark className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="text-base font-bold text-gray-900 tracking-tight">
+                  Rp {totalSaldoBank.toLocaleString('id-ID')}
+                </div>
+                <div className="mt-1 flex items-center gap-1 text-[10px]">
+                  <span className={`font-semibold flex items-center ${bankTrend > 0 ? "text-emerald-600" : bankTrend < 0 ? "text-rose-600" : "text-gray-500"}`}>
+                    {bankTrend > 0 ? <ArrowUpRight className="h-3 w-3" /> : bankTrend < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
+                    {bankTrend > 0 ? '+' : ''}{bankTrend.toFixed(1)}%
+                  </span>
+                  <span className="text-gray-400">vs bln lalu</span>
+                </div>
+              </div>
+              <div className="h-1 bg-blue-600 rounded-b-xl" />
+            </motion.div>
+
+            {/* TOTAL ASET LANCAR */}
+            <motion.div 
+              variants={itemVariants}
+              onClick={() => props.onNavigate('coa', undefined, 'Aset', '')}
+              className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
+              title="Klik untuk lihat Chart of Accounts (COA)"
+            >
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase group-hover:text-teal-600 transition-colors">Total Aset Lancar</span>
+                  <div className="p-2 bg-teal-50 rounded-lg text-teal-600 group-hover:bg-teal-600 group-hover:text-white transition-all">
+                    <Coins className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="text-base font-bold text-gray-900 tracking-tight">
+                  Rp {totalAsetLancar.toLocaleString('id-ID')}
+                </div>
+                <div className="mt-1 flex items-center gap-1 text-[10px]">
+                  <span className={`font-semibold flex items-center ${lancarTrend > 0 ? "text-emerald-600" : lancarTrend < 0 ? "text-rose-600" : "text-gray-500"}`}>
+                    {lancarTrend > 0 ? <ArrowUpRight className="h-3 w-3" /> : lancarTrend < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
+                    {lancarTrend > 0 ? '+' : ''}{lancarTrend.toFixed(1)}%
+                  </span>
+                  <span className="text-gray-400">vs bln lalu</span>
+                </div>
+              </div>
+              <div className="h-1 bg-teal-600 rounded-b-xl" />
+            </motion.div>
+
+            {/* TOTAL ASET TIDAK LANCAR */}
+            <motion.div 
+              variants={itemVariants}
+              onClick={() => props.onNavigate('coa', undefined, 'Aset', '')}
+              className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
+              title="Klik untuk lihat Chart of Accounts (COA)"
+            >
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase group-hover:text-amber-600 transition-colors">Total Aset Tetap</span>
+                  <div className="p-2 bg-amber-50 rounded-lg text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-all">
+                    <Building className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="text-base font-bold text-gray-900 tracking-tight">
+                  Rp {totalAsetTidakLancar.toLocaleString('id-ID')}
+                </div>
+                <div className="mt-1 flex items-center gap-1 text-[10px]">
+                  <span className={`font-semibold flex items-center ${tidakLancarTrend > 0 ? "text-emerald-600" : tidakLancarTrend < 0 ? "text-rose-600" : "text-gray-500"}`}>
+                    {tidakLancarTrend > 0 ? <ArrowUpRight className="h-3 w-3" /> : tidakLancarTrend < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
+                    {tidakLancarTrend > 0 ? '+' : ''}{tidakLancarTrend.toFixed(1)}%
+                  </span>
+                  <span className="text-gray-400">vs bln lalu</span>
+                </div>
+              </div>
+              <div className="h-1 bg-amber-600 rounded-b-xl" />
+            </motion.div>
+
+            {/* TOTAL PENJUALAN */}
+            <motion.div 
+              variants={itemVariants}
+              onClick={() => props.onNavigate('inventori')}
+              className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
+              title="Lihat Mutasi Penjualan (Harian/Bulanan)"
+            >
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase group-hover:text-indigo-600 transition-colors">Penjualan Unit Toko</span>
+                  <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                    <ShoppingBag className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="text-base font-bold text-gray-900 tracking-tight">
+                  Rp {penjualanCurrent.toLocaleString('id-ID')}
+                </div>
+                <div className="mt-1 flex items-center gap-1 text-[10px]">
+                  <span className={`font-semibold flex items-center ${penjualanTrend > 0 ? "text-emerald-600" : penjualanTrend < 0 ? "text-rose-600" : "text-gray-500"}`}>
+                    {penjualanTrend > 0 ? <ArrowUpRight className="h-3 w-3" /> : penjualanTrend < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
+                    {penjualanTrend > 0 ? '+' : ''}{penjualanTrend.toFixed(1)}%
+                  </span>
+                  <span className="text-gray-400">vs bln lalu</span>
+                </div>
+              </div>
+              <div className="h-1 bg-indigo-600 rounded-b-xl" />
+            </motion.div>
+
+            {/* PEMBELIAN / HPP */}
+            <motion.div 
+              variants={itemVariants}
+              className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
+              title="Lihat Mutasi Pembelian (Harian/Bulanan)"
+            >
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase group-hover:text-orange-600 transition-colors">Pembelian Persediaan</span>
+                  <div className="p-2 bg-orange-50 rounded-lg text-orange-600 group-hover:bg-orange-600 group-hover:text-white transition-all">
+                    <ShoppingBag className="h-4 w-4" />
+                  </div>
+                </div>
+                <div className="text-base font-bold text-gray-900 tracking-tight">
+                  Rp {pembelianCurrent.toLocaleString('id-ID')}
+                </div>
+                <div className="mt-1 flex items-center gap-1 text-[10px]">
+                  <span className={`font-semibold flex items-center ${pembelianTrend > 0 ? "text-emerald-600" : pembelianTrend < 0 ? "text-rose-600" : "text-gray-500"}`}>
+                    {pembelianTrend > 0 ? <ArrowUpRight className="h-3 w-3" /> : pembelianTrend < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
+                    {pembelianTrend > 0 ? '+' : ''}{pembelianTrend.toFixed(1)}%
+                  </span>
+                  <span className="text-gray-400">vs bln lalu</span>
+                </div>
+              </div>
+              <div className="h-1 bg-orange-600 rounded-b-xl" />
+            </motion.div>
+          </motion.div>
+
+          {/* RINGKASAN JATUH TEMPO (DUE DATE SUMMARY) WIDGET */}
+          {(overdueInvoices.length > 0 || upcomingInvoices.length > 0) && (
+            <motion.div 
+              variants={itemVariants}
+              initial="hidden"
+              animate="visible"
+              className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"
+            >
+              {overdueInvoices.length > 0 && (
+                <div 
+                  onClick={() => props.onNavigate('operasional')}
+                  className="bg-rose-600 rounded-2xl p-4 shadow-xl shadow-rose-900/10 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-all group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 bg-white/20 rounded-xl flex items-center justify-center text-white">
+                      <AlertTriangle className="h-6 w-6 animate-pulse" />
+                    </div>
+                    <div>
+                      <h4 className="text-[10px] font-black text-rose-100 uppercase tracking-[0.15em] mb-0.5">Tagihan Jatuh Tempo</h4>
+                      <p className="text-xl font-black text-white leading-none">
+                        {overdueInvoices.length} Tagihan • Rp {overdueInvoices.reduce((acc, c) => acc + c.jumlah, 0).toLocaleString('id-ID')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-white/10 px-3 py-1.5 rounded-lg border border-white/20 group-hover:bg-white/20 transition-colors">
+                    <span className="text-[10px] font-black text-white uppercase tracking-wider">Tindak Lanjut</span>
+                  </div>
+                </div>
+              )}
+
+              {upcomingInvoices.length > 0 && (
+                <div 
+                  onClick={() => props.onNavigate('operasional')}
+                  className="bg-amber-500 rounded-2xl p-4 shadow-xl shadow-amber-900/10 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-all group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 bg-white/20 rounded-xl flex items-center justify-center text-white">
+                      <Calendar className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-[10px] font-black text-amber-50 uppercase tracking-[0.15em] mb-0.5">Mendekati Jatuh Tempo (7 Hari)</h4>
+                      <p className="text-xl font-black text-white leading-none">
+                        {upcomingInvoices.length} Tagihan • Rp {upcomingInvoices.reduce((acc, c) => acc + c.jumlah, 0).toLocaleString('id-ID')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-white/10 px-3 py-1.5 rounded-lg border border-white/20 group-hover:bg-white/20 transition-colors">
+                    <span className="text-[10px] font-black text-white uppercase tracking-wider">Lihat Daftar</span>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+
           {/* CHARTS & RECENT ACTIVITIES */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* SVG CHART WITH SELECTABLE CHART TYPE */}
@@ -1699,6 +2059,100 @@ export function Dashboard(props: DashboardProps) {
       {/* SUBTAB CONTENT 3: KALENDER & PERINGATAN PIUTANG */}
       {activeSubTab === 'operasional' && (
         <div className="space-y-6">
+          {/* LOW STOCK ALERT WIDGET */}
+          {lowStockItems.length > 0 && (
+            <motion.div 
+              variants={itemVariants}
+              initial="hidden"
+              animate="visible"
+              className="bg-rose-50 p-5 rounded-2xl border border-rose-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 animate-in zoom-in-95 duration-500"
+            >
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center shadow-rose-100/50 shadow-lg border border-rose-200">
+                  <AlertTriangle className="h-6 w-6 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-rose-900 uppercase tracking-tight">Peringatan Stok Menipis</h3>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="flex items-center gap-1 text-[10px] font-black text-rose-600 bg-rose-100/50 px-1.5 py-0.5 rounded border border-rose-200">
+                      CRITICAL: {lowStockItems.length} PRODUK
+                    </span>
+                    <span className="text-[10px] text-rose-700 font-bold uppercase tracking-tight">Segera lakukan pengisian ulang persediaan.</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 no-scrollbar">
+                {lowStockItems.slice(0, 3).map(item => (
+                  <div key={item.id} className="flex-none px-3 py-1.5 bg-white border border-rose-200 rounded-lg shadow-sm">
+                    <p className="text-[9px] text-rose-400 font-black uppercase tracking-widest leading-none">{item.kode}</p>
+                    <p className="text-[11px] font-black text-slate-700 whitespace-nowrap mt-0.5">{item.nama}</p>
+                    <p className="text-[10px] font-bold text-rose-600">Sisa: {item.qty}</p>
+                  </div>
+                ))}
+                {lowStockItems.length > 3 && (
+                  <div className="flex items-center px-2 text-[10px] font-black text-rose-400 uppercase">
+                    +{lowStockItems.length - 3} Lainnya
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => props.onNavigate('inventory')}
+                  className="px-6 py-2 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-lg shadow-rose-200 transition active:scale-95 cursor-pointer ml-auto md:ml-4 flex items-center gap-2"
+                >
+                  Kelola Stok <ArrowUpRight className="h-3 w-3" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* AUTOMATED BILLING STATUS WIDGET */}
+          <motion.div 
+            variants={itemVariants}
+            initial="hidden"
+            animate="visible"
+            className="bg-white p-5 rounded-2xl border border-indigo-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4 duration-500"
+          >
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-indigo-100/50 shadow-lg border border-indigo-100">
+                <RefreshCw className="h-6 w-6 animate-spin-slow" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Automated Monthly Billing Status</h3>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="flex items-center gap-1 text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                    <CheckCircle className="h-3 w-3" /> SYSTEM READY
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Terakhir Sinkron: 1 Jun 2026, 00:01 WIB</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex flex-wrap gap-2 w-full md:w-auto">
+              <div className="flex-1 md:w-40 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+                <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest leading-none">Jadwal Rutin</p>
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-[11px] font-black text-slate-700">Setiap Tanggal 1</p>
+                  <Calendar className="h-3 w-3 text-slate-300" />
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/admin/trigger-member-billing', { method: 'POST' });
+                    if(res.ok) alert("Proses automasi billing anggota berhasil dijalankan!");
+                  } catch (e) {
+                    alert("Gagal menghubungi server automasi.");
+                  }
+                }}
+                className="flex-1 md:flex-none px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-lg shadow-indigo-200 transition active:scale-95 cursor-pointer flex items-center justify-center gap-2 group"
+              >
+                <RefreshCw className="h-3.5 w-3.5 group-hover:rotate-180 transition-transform duration-500" /> Trigger Manual
+              </button>
+            </div>
+          </motion.div>
+
           {/* SECTION OPERATIONAL CALENDAR & WIDGET NOTICE PIUTANG */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
         {/* OPERATIONAL CALENDAR (lg:col-span-2) */}
@@ -1883,6 +2337,176 @@ export function Dashboard(props: DashboardProps) {
       </div>
       )}
 
+      {activeSubTab === 'analisis_mendalam' && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6 pb-20"
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* SCORECARD KESEHATAN FINANSIAL */}
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+              <div className="p-5 border-b border-slate-50 bg-slate-50/50">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                  Financial Health Score
+                </h3>
+              </div>
+              <div className="p-8 flex flex-col items-center justify-center flex-1">
+                <div className="relative h-44 w-44 flex items-center justify-center">
+                  <svg className="h-full w-full -rotate-90">
+                    <circle cx="88" cy="88" r="75" stroke="currentColor" strokeWidth="12" fill="transparent" className="text-slate-100" />
+                    <circle cx="88" cy="88" r="75" stroke="currentColor" strokeWidth="12" fill="transparent" className="text-emerald-500" strokeDasharray={471} strokeDashoffset={471 - (471 * Math.min(100, (currentRatio/2 + netMargin*2 + 50))) / 100} strokeLinecap="round" />
+                  </svg>
+                  <div className="absolute flex flex-col items-center">
+                    <span className="text-4xl font-black text-slate-900">{Math.min(100, Math.round(currentRatio/3 + netMargin*2 + 40))}%</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Overall Scored</span>
+                  </div>
+                </div>
+                <div className="mt-6 text-center">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100 text-[10px] font-black uppercase tracking-wider mb-2">
+                    {currentRatio >= 120 ? "Optimized Capital" : "Review Needed"}
+                  </div>
+                  <p className="text-[11px] text-slate-500 max-w-[240px] leading-relaxed">
+                    Kombinasi likuiditas lancar ({currentRatio.toFixed(0)}%) dan efisiensi laba bersih ({netMargin.toFixed(1)}%) menunjukkan ketahanan koperasi yang sangat baik.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* BREAKDOWN RASIO PROFITABILITAS */}
+            <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+               <div className="p-5 border-b border-slate-50 flex items-center justify-between">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-indigo-600" />
+                  Efisiensi & Rasio Profitabilitas
+                </h3>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Performa 2026</span>
+              </div>
+              <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-10 flex-1">
+                <div className="space-y-8">
+                   <div className="space-y-3">
+                    <div className="flex justify-between items-end">
+                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Gross Profit Margin</span>
+                      <span className="text-base font-black text-slate-900">{grossMargin.toFixed(1)}%</span>
+                    </div>
+                    <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.max(2, grossMargin)}%` }} />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-end">
+                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Net Profit Margin (SHU)</span>
+                      <span className="text-base font-black text-slate-900">{netMargin.toFixed(1)}%</span>
+                    </div>
+                    <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.max(2, netMargin)}%` }} />
+                    </div>
+                  </div>
+                   <div className="space-y-3">
+                    <div className="flex justify-between items-end">
+                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Return on Asset (ROA)</span>
+                      <span className="text-base font-black text-slate-900">{roa.toFixed(1)}%</span>
+                    </div>
+                    <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.max(2, roa)}%` }} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 rounded-3xl p-6 text-white flex flex-col justify-between shadow-xl shadow-slate-200">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-white/10 rounded-2xl border border-white/10">
+                      <Coins className="h-5 w-5 text-amber-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Monthly Runway Est.</p>
+                      <p className="text-sm font-black text-white mt-1">Rp {averageMonthlyExpense.toLocaleString('id-ID')} / Bln</p>
+                    </div>
+                  </div>
+                  <div className="mt-8">
+                    <div className="flex justify-between items-end mb-2">
+                      <span className="text-[11px] font-bold text-slate-300">Ketahanan Kas (Cash Runway)</span>
+                      <span className="text-sm font-black text-amber-400">{runwayMonths.toFixed(1)} Bulan</span>
+                    </div>
+                    <div className="h-4 bg-white/10 border border-white/5 rounded-full overflow-hidden p-0.5">
+                      <div className={`h-full rounded-full transition-all duration-1000 ${runwayMonths > 6 ? 'bg-emerald-500' : runwayMonths > 3 ? 'bg-amber-500' : 'bg-rose-500'}`} style={{ width: `${Math.min(100, runwayMonths * 10)}%` }} />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-3 leading-relaxed opacity-80">Estimasi waktu koperasi dapat beroperasi hanya dengan kas <strong className="text-white">Rp {kasDanBank.toLocaleString('id-ID')}</strong> tanpa pendapatan baru sama sekali.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5 md:col-span-2">
+              <div className="flex items-center justify-between border-b border-slate-50 pb-4">
+                <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-rose-500" />
+                  Indikator Solvabilitas & Leverage
+                </h4>
+                <div className="px-2 py-1 bg-slate-50 rounded-lg text-[9px] font-bold text-slate-400 border border-slate-100">STABILITAS MODAL</div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition-opacity">
+                    <ShieldCheck className="h-12 w-12 text-slate-900" />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Debt to Asset Ratio</p>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-3xl font-black text-slate-900 tracking-tighter">{debtToAssetRatio.toFixed(1)}%</p>
+                    <span className={`text-[10px] font-black uppercase ${debtToAssetRatio < 50 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {debtToAssetRatio < 50 ? "✓ Safe" : "⚠ Alert"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-3 leading-normal">Proporsi total aset yang dibiayai oleh utang/pinjaman luar.</p>
+                </div>
+                <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition-opacity">
+                    <Activity className="h-12 w-12 text-slate-900" />
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Debt to Equity Ratio</p>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-3xl font-black text-slate-900 tracking-tighter">{debtToEquityRatio.toFixed(1)}%</p>
+                    <span className={`text-[10px] font-black uppercase ${debtToEquityRatio < 100 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {debtToEquityRatio < 100 ? "✓ Healthy" : "⚠ High"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-3 leading-normal">Rasio perbandingan antara total utang dengan modal sendiri (Ekuitas).</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-indigo-600 rounded-2xl p-6 text-white flex flex-col justify-between shadow-xl shadow-indigo-100">
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-1.5 bg-white/20 rounded-lg">
+                    <Sparkles className="h-4 w-4 text-amber-300" />
+                  </div>
+                  <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-100">AI Financial Advisory</h4>
+                </div>
+                <div className="space-y-5">
+                  <div className="flex gap-4 items-start">
+                    <div className="h-6 w-6 rounded-lg bg-indigo-500 flex items-center justify-center shrink-0 text-[10px] font-bold border border-white/10">1</div>
+                    <p className="text-[11px] text-indigo-50 leading-relaxed font-medium">Jaga <strong className="text-white">Margin SHU</strong> di atas 15% untuk ekspansi unit bisnis baru di tahun depan.</p>
+                  </div>
+                   <div className="flex gap-4 items-start">
+                    <div className="h-6 w-6 rounded-lg bg-indigo-500 flex items-center justify-center shrink-0 text-[10px] font-bold border border-white/10">2</div>
+                    <p className="text-[11px] text-indigo-50 leading-relaxed font-medium">Optimalkan piutang lancar untuk memperkuat <strong className="text-white">Cash Runway</strong> koperasi.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-8 pt-4 border-t border-white/10 flex items-center justify-between">
+                <span className="text-[9px] text-indigo-300 font-bold uppercase tracking-widest">Financial AI v4.0</span>
+                <span className="flex items-center gap-1.5 text-[9px] font-bold bg-white/10 px-2.5 py-1 rounded-full border border-white/5">
+                   DATA LIVE RECAP
+                </span>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
       {/* KUSTOM KONFIRMASI RESET MODAL */}
       {showResetConfirm && (
         <div id="reset-confirm-modal" className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">

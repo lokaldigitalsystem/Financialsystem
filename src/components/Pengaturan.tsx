@@ -32,9 +32,16 @@ import {
   Download,
   Database,
   X,
-  CheckCircle2
+  CheckCircle2,
+  FileSpreadsheet,
+  RefreshCw,
+  Info,
+  TrendingUp,
+  Scale
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { auth, db, doc, setDoc, getDoc, onSnapshot } from '../supabase';
+import { DataValidationEngine } from './DataValidationEngine';
 
 interface UserAccount {
   username: string;
@@ -59,6 +66,7 @@ const ALL_MENU_PAGES = [
   { id: "asettetap", name: "Aset Tetap & Pelepasan", desc: "Akses buku harta berwujud, depresiasi, & disposal" },
   { id: "invoice", name: "Cetak Lembar Tagihan", desc: "Akses form cetak invoice tagihan resmi/struk" },
   { id: "rekappenjualan", name: "Rekap Penjualan Bulanan", desc: "Akses analisis grafik tren omset & item terlaris" },
+  { id: "audit", name: "Audit & Validasi Data", desc: "Verifikasi keseimbangan neraca & validitas saldo" },
   { id: "laporan", name: "Laporan SHU Neraca", desc: "Akses kalkulator laba-rugi & penutupan tahunan" },
   { id: "pengaturan", name: "Pengaturan Sistem", desc: "Akses kontrol penuh system, hak akses user, & profil" }
 ];
@@ -101,6 +109,14 @@ interface PengaturanProps {
   kontakLainData?: any[];
   tagihanData?: any[];
   fixedAssets?: any[];
+  onUpdateStokData?: (data: any[]) => void;
+  onUpdateJurnalData?: (data: any[]) => void;
+  onUpdateCoaData?: (data: any[]) => void;
+  onUpdateStokHistoriData?: (data: any[]) => void;
+  onUpdateAnggotaData?: (data: any[]) => void;
+  onUpdateKontakLainData?: (data: any[]) => void;
+  onUpdateTagihanData?: (data: any[]) => void;
+  onUpdateFixedAssets?: (data: any[]) => void;
 }
 
 export function Pengaturan({
@@ -131,9 +147,17 @@ export function Pengaturan({
   anggotaData = [],
   kontakLainData = [],
   tagihanData = [],
-  fixedAssets = []
+  fixedAssets = [],
+  onUpdateStokData,
+  onUpdateJurnalData,
+  onUpdateCoaData,
+  onUpdateStokHistoriData,
+  onUpdateAnggotaData,
+  onUpdateKontakLainData,
+  onUpdateTagihanData,
+  onUpdateFixedAssets
 }: PengaturanProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'users' | 'bank' | 'reset' | 'backup'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'users' | 'bank' | 'reset' | 'backup' | 'audit'>('profile');
   
   // Backup system toast notification states
   const [backupToast, setBackupToast] = useState<{
@@ -242,6 +266,166 @@ export function Pengaturan({
       message: `Tabel data ${filenamePrefix.replace(/_/g, ' ')} berhasil diunduh secara mandiri!`,
       filename
     });
+  };
+
+  const [isImporting, setIsImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>, dataType: 'stok' | 'jurnal' | 'coa') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setImportStatus(null);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        if (data.length === 0) {
+          throw new Error("File Excel kosong atau tidak terbaca!");
+        }
+
+        if (dataType === 'stok') {
+          if (!onUpdateStokData) return;
+          const importedStok = data.map((item: any, idx: number) => ({
+            id: `stok-import-${Date.now()}-${idx}`,
+            kode: String(item.kode || item.Kode || '').trim(),
+            nama: String(item.nama || item.Nama || '').trim(),
+            kategori: String(item.kategori || item.Kategori || 'Umum').trim(),
+            satuan: String(item.satuan || item.Satuan || 'Pcs').trim(),
+            hargaJual: Number(item.hargaJual || item.HargaJual || 0),
+            hargaModal: Number(item.hargaModal || item.HargaModal || 0),
+            qty: Number(item.qty || item.Qty || item.Stok || 0),
+            minStok: Number(item.minStok || item.MinStok || 0),
+            lokasi: String(item.lokasi || item.Lokasi || 'Gudang Utama').trim(),
+          })).filter(s => s.kode && s.nama);
+          
+          onUpdateStokData([...stokData, ...importedStok]);
+          setImportStatus({ type: 'success', message: `Berhasil mengimpor ${importedStok.length} data stok barang!` });
+        } else if (dataType === 'jurnal') {
+          if (!onUpdateJurnalData) return;
+          const importedJurnal = data.map((item: any, idx: number) => ({
+            id: `j-import-${Date.now()}-${idx}`,
+            tgl: String(item.tgl || item.Tanggal || new Date().toISOString().split('T')[0]).trim(),
+            no: String(item.no || item.NoBukti || item.Invoice || `IMP-${Date.now()}-${idx}`).trim(),
+            ket: String(item.ket || item.Keterangan || 'Import Transaksi Lama').trim(),
+            akun: String(item.akun || item.KodeAkun || '').trim(),
+            debet: Number(item.debet || item.Debet || 0),
+            kredit: Number(item.kredit || item.Kredit || 0),
+          })).filter(j => j.akun);
+
+          onUpdateJurnalData([...jurnalData, ...importedJurnal]);
+          setImportStatus({ type: 'success', message: `Berhasil mengimpor ${importedJurnal.length} baris jurnal transaksi!` });
+        } else if (dataType === 'coa') {
+          if (!onUpdateCoaData) return;
+          const importedCoa = data.map((item: any) => ({
+            kode: String(item.kode || item.Kode || '').trim(),
+            nama: String(item.nama || item.Nama || '').trim(),
+            kategori: String(item.kategori || item.Kategori || '').trim(),
+            normal: String(item.normal || item.Normal || 'Debet').trim(),
+            saldo: Number(item.saldo || item.Saldo || 0),
+            saldoAwal: Number(item.saldoAwal || item.SaldoAwal || item.saldo || item.Saldo || 0),
+          })).filter(c => c.kode && c.nama);
+
+          onUpdateCoaData([...coaData, ...importedCoa]);
+          setImportStatus({ type: 'success', message: `Berhasil mengimpor ${importedCoa.length} akun (COA)! Membuka audit validasi...` });
+          
+          // Switch to audit tab to show validation after COA import
+          setTimeout(() => setActiveTab('audit'), 2000);
+        }
+
+      } catch (err: any) {
+        setImportStatus({ type: 'error', message: "Gagal mengimpor file: " + err.message });
+      } finally {
+        setIsImporting(false);
+        if (e.target) e.target.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  // Helper for template download
+  const downloadTemplate = (type: 'stok' | 'jurnal' | 'coa') => {
+    let headers: string[] = [];
+    let guide: any[][] = [];
+    let filename = '';
+    
+    if (type === 'stok') {
+      headers = ['kode', 'nama', 'kategori', 'satuan', 'hargaJual', 'hargaModal', 'qty', 'minStok', 'lokasi'];
+      filename = 'template_import_stok.xlsx';
+      guide = [
+        ['PANDUAN PENGISIAN TEMPLATE STOK BARANG'],
+        [''],
+        ['KOLOM', 'PENJELASAN', 'CONTOH'],
+        ['kode', 'Wajib diisi, unik untuk setiap barang (Barcode/SKU)', 'BRG001'],
+        ['nama', 'Nama lengkap barang', 'Beras Premium 5kg'],
+        ['kategori', 'Kelompok barang', 'Sembako'],
+        ['satuan', 'Satuan terkecil barang', 'Pcs / Box / Kg'],
+        ['hargaJual', 'Harga jual ke pelanggan (Angka saja, tanpa titik/koma)', '75000'],
+        ['hargaModal', 'Harga beli atau modal pokok (Angka saja)', '68000'],
+        ['qty', 'Jumlah stok fisik saat ini', '100'],
+        ['minStok', 'Batas stok minimum untuk peringatan rendah', '10'],
+        ['lokasi', 'Tempat penyimpanan', 'Gudang Utama'],
+        [''],
+        ['CATATAN PENTING:'],
+        ['1. Jangan mengubah nama header di baris pertama.'],
+        ['2. Masukkan angka nominal tanpa karakter mata uang atau pemisah ribuan.'],
+        ['3. Pastikan kode barang belum ada di sistem jika ingin menambah barang baru.']
+      ];
+    } else if (type === 'jurnal') {
+      headers = ['tgl', 'no', 'ket', 'akun', 'debet', 'kredit'];
+      filename = 'template_import_jurnal.xlsx';
+      guide = [
+        ['PANDUAN PENGISIAN TEMPLATE JURNAL / TRANSAKSI'],
+        [''],
+        ['KOLOM', 'PENJELASAN', 'CONTOH'],
+        ['tgl', 'Tanggal transaksi format YYYY-MM-DD', '2026-05-20'],
+        ['no', 'Nomor bukti, invoice, atau referensi', 'INV-2026-001'],
+        ['ket', 'Catatan ringkas transaksi', 'Penjualan Member A'],
+        ['akun', 'Kode Akun COA yang terdaftar di sistem', '4-1001'],
+        ['debet', 'Nilai debet (Angka saja)', '150000'],
+        ['kredit', 'Nilai kredit (Angka saja)', '0'],
+        [''],
+        ['CATATAN PENTING:'],
+        ['1. Format tanggal harus Tahun-Bulan-Hari (Contoh: 2026-06-01).'],
+        ['2. Satu nomor bukti (invoice) biasanya terdiri dari minimal 2 baris (Debet & Kredit).'],
+        ['3. Pastikan total Debet dan Kredit untuk satu nomor bukti adalah sama (Seimbang).'],
+        ['4. Gunakan kode akun (COA) yang sudah ada di menu Chart of Accounts.']
+      ];
+    } else if (type === 'coa') {
+      headers = ['kode', 'nama', 'kategori', 'normal', 'saldoAwal'];
+      filename = 'template_import_coa.xlsx';
+      guide = [
+        ['PANDUAN PENGISIAN TEMPLATE BAGAN AKUN (COA)'],
+        [''],
+        ['KOLOM', 'PENJELASAN', 'CONTOH'],
+        ['kode', 'Kode unik akun akuntansi', '1-1001'],
+        ['nama', 'Nama akun', 'Kas Di Tangan'],
+        ['kategori', 'Kategori besar akun', 'Aset / Kewajiban / Modal / Pendapatan / Beban'],
+        ['normal', 'Saldo normal akun', 'Debet / Kredit'],
+        ['saldoAwal', 'Nilai saldo saat mulai menggunakan aplikasi', '5000000'],
+        [''],
+        ['CATATAN PENTING:'],
+        ['1. Kategori harus sesuai dengan standar akuntansi (Aset, Kewajiban, Modal, Pendapatan, Beban).'],
+        ['2. Normal saldo menentukan apakah penambahan akun di posisi Debet atau Kredit.'],
+        ['3. Saldo awal digunakan untuk menyusun Neraca awal sistem.']
+      ];
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet([headers]);
+    const wsGuide = XLSX.utils.aoa_to_sheet(guide);
+    const wb = XLSX.utils.book_new();
+    
+    XLSX.utils.book_append_sheet(wb, ws, "DATA_IMPORT");
+    XLSX.utils.book_append_sheet(wb, wsGuide, "PANDUAN_ISI");
+    
+    XLSX.writeFile(wb, filename);
   };
   
   // States for bank editor in settings
@@ -779,6 +963,16 @@ export function Pengaturan({
           }`}
         >
           <Database className="h-4 w-4" /> Ekspor &amp; Cadangan
+        </button>
+        <button
+          onClick={() => setActiveTab('audit')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+            activeTab === 'audit' 
+              ? 'bg-red-600 text-white shadow-md' 
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <Scale className="h-4 w-4" /> Validasi Data
         </button>
       </div>
 
@@ -1810,6 +2004,145 @@ export function Pengaturan({
                     <Download className="h-3.5 w-3.5" /> Ekspor ke CSV
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* IMPORT DATA HISTORIS (EXCEL) SECTION */}
+            <div className="pt-8 mt-4 border-t border-slate-100 space-y-6">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <FileSpreadsheet className="h-4.5 w-4.5 text-indigo-600" /> Impor Data Historis (Excel)
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Gunakan fitur ini untuk memasukan data transaksi lama atau stok awal dari file Excel. Unduh template di bawah agar format file sesuai.
+                </p>
+              </div>
+
+              {importStatus && (
+                <div className={`p-4 rounded-xl flex items-start gap-3 border shadow-sm animate-in zoom-in-95 duration-300 ${
+                  importStatus.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'
+                }`}>
+                  {importStatus.type === 'success' ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <AlertTriangle className="h-5 w-5 shrink-0" />}
+                  <span className="text-xs font-bold leading-relaxed">{importStatus.message}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* 1. Import Stok */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4 hover:border-indigo-300 transition-colors group">
+                  <div className="flex items-center justify-between">
+                    <div className="p-2.5 bg-indigo-100 text-indigo-650 rounded-xl">
+                      <FileSpreadsheet className="h-5 w-5" />
+                    </div>
+                    <button 
+                      onClick={() => downloadTemplate('stok')}
+                      className="text-[10px] font-black text-indigo-600 hover:underline flex items-center gap-1 uppercase"
+                    >
+                      <Download className="h-3 w-3" /> Template
+                    </button>
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-black text-slate-900 uppercase">Impor Stok Barang Lama</h4>
+                    <p className="text-[10px] text-slate-500 leading-normal">Unggah daftar barang, sisa stok akhir, dan harga modal/jual dari pangkalan data lama Anda.</p>
+                  </div>
+                  <label className={`w-full py-2.5 bg-white border-2 border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/30 rounded-xl text-[10px] font-black uppercase text-slate-600 flex items-center justify-center gap-2 cursor-pointer transition ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {isImporting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                    Pilih File Excel Stok
+                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleImportExcel(e, 'stok')} disabled={isImporting} />
+                  </label>
+                </div>
+
+                {/* 2. Import Jurnal / Penjualan */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4 hover:border-indigo-300 transition-colors group">
+                  <div className="flex items-center justify-between">
+                    <div className="p-2.5 bg-indigo-100 text-indigo-650 rounded-xl">
+                      <TrendingUp className="h-5 w-5" />
+                    </div>
+                    <button 
+                      onClick={() => downloadTemplate('jurnal')}
+                      className="text-[10px] font-black text-indigo-600 hover:underline flex items-center gap-1 uppercase"
+                    >
+                      <Download className="h-3 w-3" /> Template
+                    </button>
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-black text-slate-900 uppercase">Impor Penjualan &amp; Jurnal</h4>
+                    <p className="text-[10px] text-slate-500 leading-normal">Masukkan riwayat transaksi penjualan bulanan atau entri jurnal untuk melengkapi laporan tahunan.</p>
+                  </div>
+                  <label className={`w-full py-2.5 bg-white border-2 border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/30 rounded-xl text-[10px] font-black uppercase text-slate-600 flex items-center justify-center gap-2 cursor-pointer transition ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {isImporting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                    Pilih File Excel Jurnal
+                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleImportExcel(e, 'jurnal')} disabled={isImporting} />
+                  </label>
+                </div>
+
+                {/* 3. Import COA Settings */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4 hover:border-indigo-300 transition-colors group">
+                  <div className="flex items-center justify-between">
+                    <div className="p-2.5 bg-indigo-100 text-indigo-650 rounded-xl">
+                      <Settings className="h-5 w-5" />
+                    </div>
+                    <button 
+                      onClick={() => downloadTemplate('coa')}
+                      className="text-[10px] font-black text-indigo-600 hover:underline flex items-center gap-1 uppercase"
+                    >
+                      <Download className="h-3 w-3" /> Template
+                    </button>
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-black text-slate-900 uppercase">Impor Bagan Akun (COA)</h4>
+                    <p className="text-[10px] text-slate-500 leading-normal">Atur struktur akun akuntansi dan saldo awal buku besar secara massal melalui satu berkas Excel.</p>
+                  </div>
+                  <label className={`w-full py-2.5 bg-white border-2 border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/30 rounded-xl text-[10px] font-black uppercase text-slate-600 flex items-center justify-center gap-2 cursor-pointer transition ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {isImporting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                    Pilih File Excel COA
+                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleImportExcel(e, 'coa')} disabled={isImporting} />
+                  </label>
+                </div>
+              </div>
+
+              {/* Instructions Tip */}
+              <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-150 flex items-start gap-3">
+                <div className="p-2 bg-white rounded-xl shadow-sm">
+                  <Info className="h-4 w-4 text-indigo-600" />
+                </div>
+                <div className="space-y-1">
+                  <h5 className="font-extrabold text-xs text-indigo-900 uppercase tracking-tight">Panduan Import Aman</h5>
+                  <p className="text-[11px] text-indigo-800 leading-relaxed opacity-80">
+                    1. Unduh template Excel yang disediakan di setiap kategori.<br />
+                    2. Pastikan <strong>Header (Baris 1)</strong> tidak diubah namanya agar terbaca sistem.<br />
+                    3. Format tanggal gunakan: <code>YYYY-MM-DD</code> (Tahun-Bulan-Hari).<br />
+                    4. Untuk Jurnal, pastikan total Debet dan Kredit dalam satu nomor bukti sudah seimbang.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6: AUDIT & VALIDATION ENGINE */}
+        {activeTab === 'audit' && (
+          <div className="space-y-6 animate-in fade-in duration-200 text-left" id="tab-audit">
+            <div className="border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <ShieldAlert className="h-4.5 w-4.5 text-red-600 animate-pulse" /> Audit &amp; Mesin Validasi Integritas Data
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Modul ini mendeteksi ketidakseimbangan antara Aset, Kewajiban, dan Modal pada database COA Anda (Saldo Awal). Pastikan Neraca awal Anda seimbang (Balance) sebelum memulai pembukuan rutin.
+              </p>
+            </div>
+
+            <DataValidationEngine coaData={coaData} />
+
+            <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-start gap-3">
+              <Info className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h5 className="text-xs font-bold text-blue-900">Tips Keseimbangan Akuntansi</h5>
+                <ul className="text-[10px] text-blue-800 space-y-1 opacity-90 list-disc pl-4">
+                  <li>Total Aset (Harta) harus sama dengan Total Kewajiban (Hutang) + Total Ekuitas (Modal).</li>
+                  <li>Jika terdapat selisih setelah import, periksa kembali kolom "Saldo Awal" pada file Excel Anda.</li>
+                  <li>Anda dapat menyesuaikan saldo akun secara manual di menu Chart of Accounts.</li>
+                </ul>
               </div>
             </div>
           </div>

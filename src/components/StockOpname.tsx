@@ -36,6 +36,7 @@ interface StockOpnameProps {
     tgl: string,
     petugas: string
   ) => void;
+  onAddJurnal?: (tgl: string, no: string, ket: string, entries: { akun: string; debet: number; kredit: number }[]) => void;
 }
 
 interface OpnameSession {
@@ -251,6 +252,48 @@ export function StockOpname(props: StockOpnameProps) {
   const handleApplyOpname = (adjustments: any[], sessionItems: any[]) => {
     // Call state updater in app
     props.onBulkOpname(adjustments, tanggal, petugas);
+
+    // AUTOMATIC JOURNAL INTEGRATION
+    if (props.onAddJurnal && adjustments.length > 0) {
+      adjustments.forEach(adj => {
+        if (adj.diff === 0) return;
+
+        const item = props.stokData.find(s => s.id === adj.stokId);
+        if (!item) return;
+
+        const modalPrice = item.hargaModal || Math.round(item.hargaJual * 0.75);
+        const totalValue = Math.abs(adj.diff * modalPrice);
+        const journalId = `OPM-JRN-${Date.now().toString().slice(-4)}-${adj.stokId.slice(-3)}`;
+
+        if (adj.diff < 0) {
+          // DEFICIT: Lost/Damaged
+          // DEBIT: Biaya Lain-lain (6-1031) or similar expense
+          // CREDIT: Persediaan (1-1301)
+          props.onAddJurnal!(
+            tanggal,
+            journalId,
+            `Stock Opname Defisit: ${item.nama} (${adj.keterangan || 'Barang Hilang/Rusak'})`,
+            [
+              { akun: "6-1031", debet: totalValue, kredit: 0 },
+              { akun: "1-1301", debet: 0, kredit: totalValue }
+            ]
+          );
+        } else {
+          // SURPLUS: Extra items found
+          // DEBIT: Persediaan (1-1301)
+          // CREDIT: Pendapatan Lain-lain (4-1003)
+          props.onAddJurnal!(
+            tanggal,
+            journalId,
+            `Stock Opname Surplus: ${item.nama} (${adj.keterangan || 'Barang Lebih'})`,
+            [
+              { akun: "1-1301", debet: totalValue, kredit: 0 },
+              { akun: "4-1003", debet: 0, kredit: totalValue }
+            ]
+          );
+        }
+      });
+    }
 
     // Save session metadata
     const newSession: OpnameSession = {

@@ -25,7 +25,6 @@ import {
   FileDown,
   QrCode,
   Printer,
-  ArrowLeftRight,
   ShieldCheck,
   Megaphone,
   RefreshCw
@@ -98,8 +97,6 @@ export function AnggotaList(props: AnggotaProps) {
   const [selectedPrintBill, setSelectedPrintBill] = useState<Tagihan | null>(null);
   const [selectedBillsForBulkPrint, setSelectedBillsForBulkPrint] = useState<Tagihan[]>([]);
   const [bulkSelection, setBulkSelection] = useState<string[]>([]);
-  const [isCardFlipped, setIsCardFlipped] = useState(false);
-  const [detailTab, setDetailTab] = useState<"card" | "savings">("card");
 
   // Member Form Fields
   const [formId, setFormId] = useState("");
@@ -644,18 +641,16 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
                           </td>
                           <td className="py-3.5 px-4 text-center">
                             <div className="inline-flex gap-1.5 justify-center items-center">
-                              {/* QR Code trigger button for ID Card */}
+                              {/* History trigger button */}
                               <button
                                 type="button"
                                 onClick={() => {
                                   setSelectedIdCardMember(item);
-                                  setIsCardFlipped(false);
-                                  setDetailTab("card");
                                 }}
-                                className="inline-flex items-center gap-1 py-1 px-2.5 bg-red-50 hover:bg-red-100 text-red-650 hover:text-red-800 text-[10px] font-black uppercase rounded cursor-pointer transition"
-                                title="Cetak & Lihat ID Card QR"
+                                className="inline-flex items-center gap-1 py-1 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 text-[10px] font-black uppercase rounded cursor-pointer transition"
+                                title="Lihat Riwayat Tabungan/Simpanan"
                               >
-                                <QrCode className="h-3.5 w-3.5 text-red-600" /> Detail
+                                <RefreshCw className="h-3.5 w-3.5 text-slate-600" /> Riwayat
                               </button>
   
                               {props.accessMode === "admin" && (
@@ -1856,7 +1851,6 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
                 type="button"
                 onClick={() => {
                   setSelectedIdCardMember(null);
-                  setIsCardFlipped(false);
                 }}
                 className="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white p-1.5 rounded-full transition cursor-pointer"
               >
@@ -1866,189 +1860,15 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
 
             {/* Sub-tabs for Detail View */}
             <div className="flex w-full bg-slate-950/50 p-1 rounded-xl mb-6 border border-slate-800 shrink-0">
-              <button
-                onClick={() => setDetailTab("card")}
-                className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition ${
-                  detailTab === "card" 
-                    ? "bg-slate-800 text-white shadow-sm" 
-                    : "text-slate-500 hover:text-slate-300"
-                }`}
-              >
-                Kartu Anggota
-              </button>
-              <button
-                onClick={() => setDetailTab("savings")}
-                className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition ${
-                  detailTab === "savings" 
-                    ? "bg-slate-800 text-white shadow-sm" 
-                    : "text-slate-500 hover:text-slate-300"
-                }`}
-              >
-                Riwayat Simpanan
-              </button>
+              <div className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg bg-slate-800 text-white shadow-sm text-center">
+                Riwayat Simpanan & Tabungan
+              </div>
             </div>
 
-            {detailTab === "card" ? (
-              <div className="overflow-y-auto w-full flex flex-col items-center pb-2">
-                {/* Print Friendly CSS hacks */}
-                <style dangerouslySetInnerHTML={{__html: `
-                  @media print {
-                    body * {
-                      visibility: hidden;
-                    }
-                    #member-id-card-print-area, #member-id-card-print-area * {
-                      visibility: visible;
-                    }
-                    #member-id-card-print-area {
-                      position: absolute;
-                      left: 50%;
-                      top: 50%;
-                      transform: translate(-50%, -50%) scale(1.4);
-                      border: none !important;
-                      box-shadow: none !important;
-                    }
-                  }
-                `}} />
-
-                {/* Flipped Card Component */}
-                <div id="member-id-card-print-area" className="w-[305px] h-[450px] [perspective:1000px] mb-6 shrink-0">
-                  <div 
-                    className={`relative w-full h-full transition-transform duration-700 [transform-style:preserve-3d] ${
-                      isCardFlipped ? '[transform:rotateY(180deg)]' : ''
-                    }`}
-                  >
-                    {/* ID-CARD FRONT SIDE */}
-                    <div className="absolute w-full h-full rounded-2xl [backface-visibility:hidden] border border-slate-200 overflow-hidden shadow-2xl bg-white flex flex-col justify-between py-6 px-4 text-slate-950 select-none text-left">
-                      {/* Red and White Stripe Banner */}
-                      <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-r from-red-650 via-rose-500 to-white flex items-center px-4">
-                        <span className="text-[7px] font-black text-white/90 tracking-widest leading-none font-mono uppercase">KOPERASI INDONESIA</span>
-                      </div>
-                      
-                      {/* Card Corporate Brand */}
-                      <div className="mt-2 text-center">
-                        <p className="text-[9px] font-extrabold text-red-650 tracking-[0.2em] uppercase font-mono leading-none">Kartu Anggota Resmi</p>
-                        <h2 className="text-xs font-black text-slate-900 tracking-tight leading-tight uppercase mt-1">
-                          {props.koperasiName || "Koperasi Desa Merah Putih"}
-                        </h2>
-                        <p className="text-[7px] text-slate-400 font-mono mt-0.5 uppercase tracking-wide">Desa Mandiri Keuangan Digital</p>
-                        <div className="w-12 h-[1px] bg-red-600 mx-auto mt-2"></div>
-                      </div>
-
-                      {/* Profile Frame with active indicator */}
-                      <div className="my-2 flex flex-col items-center">
-                        <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-red-50 to-slate-100 border-2 border-red-500/30 p-1 shadow-sm relative flex items-center justify-center overflow-hidden">
-                          <div className="w-full h-full bg-slate-900 rounded-xl flex items-center justify-center text-white relative">
-                            {selectedIdCardMember.foto ? (
-                              <img 
-                                src={selectedIdCardMember.foto} 
-                                alt={selectedIdCardMember.nama} 
-                                className="w-full h-full object-cover rounded-xl"
-                                referrerPolicy="no-referrer"
-                              />
-                            ) : (
-                              <>
-                                <Users className="h-10 w-10 text-slate-400/80" />
-                                
-                                {/* Dynamic initials */}
-                                <span className="absolute inset-0 flex items-center justify-center text-xl font-black text-white opacity-10 uppercase tracking-widest font-sans">
-                                  {selectedIdCardMember.nama.slice(0, 2)}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                          
-                          {/* Authentic stamp ribbon */}
-                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-white text-[8px] text-white font-extrabold" title="Status Keanggotaan Aktif">
-                            ✓
-                          </div>
-                        </div>
-
-                        <div className="text-center mt-2.5 space-y-1">
-                          <h4 className="text-sm font-black text-slate-900 leading-tight tracking-tight uppercase px-1">{selectedIdCardMember.nama}</h4>
-                          <p className="text-[10px] font-extrabold text-red-650 font-sans tracking-wide leading-none">Anggota {selectedIdCardMember.tipe || "Biasa"}</p>
-                          
-                          <div className="inline-flex mt-1.5 px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-[8px] font-bold text-slate-500 font-mono tracking-widest uppercase">
-                            ID: {selectedIdCardMember.id}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Decorative stamp seal / hologram details */}
-                      <div className="border-t border-dashed border-slate-200 pt-3 flex items-center justify-between text-left">
-                        <div className="flex items-center gap-1">
-                          <div className="w-6 h-6 rounded-full bg-slate-100 border border-red-500/40 flex items-center justify-center shrink-0">
-                            <ShieldCheck className="h-3.5 w-3.5 text-red-600" />
-                          </div>
-                          <div className="text-[7px] leading-tight shrink-0">
-                            <p className="font-extrabold text-slate-900 font-mono uppercase tracking-tighter">KEANGGOTAAN SAH</p>
-                            <p className="text-[6px] text-slate-400 font-mono font-medium">DocRef: {props.koperasiId || "KDMP"}-{selectedIdCardMember.id}</p>
-                          </div>
-                        </div>
-                        
-                        <div className="text-right text-[7px] leading-tight max-w-[128px]">
-                          <p className="font-extrabold text-slate-400 tracking-tighter uppercase">Authorized Signature</p>
-                          <p className="font-black text-slate-800 underline uppercase mt-2">M. Salim Priadi</p>
-                          <p className="text-[6px] text-slate-400 font-medium">Ketua Umum Koperasi</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* ID-CARD BACK SIDE */}
-                    <div className="absolute w-full h-full rounded-2xl [backface-visibility:hidden] [transform:rotateY(180deg)] border border-red-650 overflow-hidden shadow-2xl bg-gradient-to-b from-slate-950 to-slate-900 flex flex-col justify-between py-6 px-4 text-white text-center select-none text-left">
-                      <div className="text-center space-y-1">
-                        <h3 className="text-[10px] font-black text-red-500 uppercase tracking-[0.2em] font-mono leading-none text-center">Keamanan &amp; Verifikasi Digital</h3>
-                        <p className="text-[8px] text-slate-400 font-sans tracking-wide font-medium text-center">Pindai QR ini untuk konfirmasi status keanggotaan warga</p>
-                        <div className="w-12 h-[1px] bg-red-600 mx-auto my-1.5 animate-pulse"></div>
-                      </div>
-
-                      {/* QR Core Element */}
-                      <div className="my-3 flex flex-col items-center">
-                        <div className="p-2.5 bg-white rounded-xl border border-slate-800 inline-block shadow-lg">
-                          <img
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&color=991b1b&data=${encodeURIComponent(
-                              `${window.location.origin}/?verify_id=${selectedIdCardMember.id}&verify_name=${encodeURIComponent(selectedIdCardMember.nama)}&verify_role=Anggota%20${encodeURIComponent(selectedIdCardMember.tipe || 'Biasa')}&verify_status=Aktif`
-                            )}`}
-                            alt="QR ID Verifikator"
-                            className="w-36 h-36 object-contain"
-                            referrerPolicy="no-referrer"
-                          />
-                        </div>
-                        <p className="text-[8px] font-mono text-red-400 font-bold tracking-widest uppercase mt-2.5 text-center">
-                          QR CODE AUTH SECURE
-                        </p>
-                      </div>
-
-                      {/* Operational Notes */}
-                      <div className="text-left text-[7px] leading-relaxed text-slate-400 border-t border-slate-800/80 pt-2.5 space-y-1">
-                        <p className="text-[8px] font-extrabold text-slate-200 mb-1 leading-none uppercase font-mono">Panduan Penggunaan</p>
-                        <p>1. Kartu ini merupakan tanda pengenal resmi Anggota ${props.koperasiName || "Financial System"}.</p>
-                        <p>2. Silakan melakukan pemindaian QR Code di atas menggunakan ponsel untuk validasi keaslian kepesertaan secara real-time di server database desa.</p>
-                        <p>3. Dilarang menyalahgunakan kartu ini untuk transaksi ilegal desa.</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Actions */}
-                <div className="w-full grid grid-cols-2 gap-3.5 mt-2 px-6">
-                  <button
-                    type="button"
-                    onClick={() => setIsCardFlipped(!isCardFlipped)}
-                    className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[10px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <ArrowLeftRight className="h-3.5 w-3.5" /> Balik Kartu
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => window.print()}
-                    className="w-full py-2.5 bg-red-650 hover:bg-red-700 text-white font-extrabold text-[10px] uppercase tracking-widest rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Printer className="h-3.5 w-3.5" /> Cetak Kartu
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="w-full flex-1 overflow-y-auto custom-scrollbar px-2">
+            {(() => {
+              // We just show Riwayat Simpanan directly now
+              return (
+                <div className="w-full flex-1 overflow-y-auto custom-scrollbar px-2">
                 <div className="text-left mb-4">
                   <h4 className="text-white text-xs font-black uppercase tracking-wider mb-1">Riwayat Setoran Simpanan</h4>
                   <p className="text-slate-400 text-[10px]">Data histori ditarik otomatis dari buku jurnal umum anggota <strong>{selectedIdCardMember.nama}</strong></p>
@@ -2131,10 +1951,11 @@ Staf Verifikasi & Keuangan ${props.koperasiName || "Financial System"}`;
                   <PlusCircle className="h-6 w-6 text-emerald-500 opacity-50" />
                 </div>
               </div>
-            )}
-          </div>
+            );
+          })()}
         </div>
-      )}
-    </div>
+      </div>
+    )}
+  </div>
   );
 }

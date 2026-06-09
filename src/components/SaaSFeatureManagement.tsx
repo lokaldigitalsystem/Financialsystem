@@ -26,7 +26,8 @@ import {
   XCircle,
   Info,
   Sliders,
-  HelpCircle
+  HelpCircle,
+  RotateCcw
 } from 'lucide-react';
 import { doc, getDoc, setDoc, onSnapshot, db } from '../supabase';
 import { Tenant } from '../types';
@@ -37,6 +38,7 @@ export const SYSTEM_MODULES = [
   { id: "dashboard", name: "Dashboard Ringkasan", desc: "Dashboard utama, widget statistik, saldo berjalan, & pemberitahuan.", icon: LayoutDashboard },
   { id: "jurnal", name: "Jurnal Umum Akuntansi", desc: "Siklus pencatatan pembukuan debet-kredit akuntansi ganda.", icon: BookOpen },
   { id: "stok", name: "Logistik & Stok Barang", desc: "Katalog inventaris pupuk, bibit, sembako, & log gudang.", icon: Package },
+  { id: "returpembelian", name: "Retur Pembelian Barang", desc: "Kembalikan stok ke supplier & penyesuaian dana otomatis.", icon: RotateCcw },
   { id: "stockopname", name: "Stock Opname Fisik", desc: "Pemeriksaan fisik stok manual, diskrepansi, & pencatatan audit.", icon: ClipboardCheck },
   { id: "kasbank", name: "Kas & Arus Rekening", desc: "Sistem kasir tunai instansi & transfer bank eksternal.", icon: Wallet },
   { id: "asettetap", name: "Aset Tetap & Depresiasi", desc: "Penyusutan aset mekanik / inventaris berkala otomatis.", icon: TrendingUp },
@@ -48,9 +50,9 @@ export const SYSTEM_MODULES = [
 
 export const PLAN_DEFAULT_FEATURES: Record<"Trial" | "Basic" | "Premium" | "Enterprise", string[]> = {
   Trial: ["dashboard", "jurnal", "kontak", "kasbank"],
-  Basic: ["dashboard", "jurnal", "kontak", "kasbank", "stok", "laporan"],
-  Premium: ["dashboard", "jurnal", "kontak", "kasbank", "stok", "laporan", "stockopname", "invoice"],
-  Enterprise: ["dashboard", "jurnal", "kontak", "kasbank", "stok", "laporan", "stockopname", "invoice", "asettetap", "security_audit"]
+  Basic: ["dashboard", "jurnal", "kontak", "kasbank", "stok", "laporan", "returpembelian"],
+  Premium: ["dashboard", "jurnal", "kontak", "kasbank", "stok", "laporan", "stockopname", "invoice", "returpembelian"],
+  Enterprise: ["dashboard", "jurnal", "kontak", "kasbank", "stok", "laporan", "stockopname", "invoice", "asettetap", "security_audit", "returpembelian"]
 };
 
 interface SaaSFeatureManagementProps {

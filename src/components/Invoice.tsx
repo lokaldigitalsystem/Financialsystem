@@ -4,7 +4,8 @@
  */
 
 import React, { useState } from 'react';
-import { FileText, Printer, RefreshCw, Send, CheckCircle, FileDown, Sparkles, Plus, Trash2 } from 'lucide-react';
+import { FileText, Printer, RefreshCw, Send, CheckCircle, FileDown, Sparkles, Plus, Trash2, History, X, Search, ShoppingBag } from 'lucide-react';
+import { PastSale } from '../types';
 // @ts-ignore
 import logoKoperasi from '../assets/images/regenerated_image_1780331184031.jpg';
 
@@ -13,20 +14,53 @@ interface InvoiceProps {
   koperasiAlamat?: string;
   koperasiLogo?: string;
   koperasiInvoiceSize?: string;
+  koperasiId?: string;
+  salesHistory: PastSale[];
+  onUpdateSalesHistory: React.Dispatch<React.SetStateAction<PastSale[]>>;
 }
 
 export function Invoice({
   koperasiName = "Supercloud Integrated Financial System",
   koperasiAlamat = "Sistem Informasi Akuntansi & Operasional Komprehensif",
   koperasiLogo = "",
-  koperasiInvoiceSize = "A4"
+  koperasiInvoiceSize = "A4",
+  koperasiId = "",
+  salesHistory,
+  onUpdateSalesHistory
 }: InvoiceProps) {
   const [activeSubTab, setActiveSubTab] = useState<'resmi' | 'penawaran'>('resmi');
 
   const [invNo, setInvNo] = useState("");
   const [invClient, setInvClient] = useState("");
+  const [discount, setDiscount] = useState(0);
+  const [tax, setTax] = useState(0);
   const [items, setItems] = useState<Array<{ id: string; nama: string; qty: number; harga: number }>>([]);
   
+  // Sales History states
+  const [showSalesModal, setShowSalesModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const filteredHistory = salesHistory.filter(s => 
+    s.id.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (s.customerNama && s.customerNama.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  const importFromSale = (sale: any) => {
+    setInvNo(sale.id);
+    setInvClient(sale.customerNama || "Umum / Customer");
+    setDiscount(sale.discount || 0);
+    setTax(sale.tax || 0);
+    
+    const mappedItems = sale.items.map((item: any) => ({
+      id: Math.random().toString(36).substr(2, 9),
+      nama: item.nama,
+      qty: item.qty,
+      harga: item.hargaJual
+    }));
+    
+    setItems(mappedItems);
+    setShowSalesModal(false);
+  };
   // Customizable signature fields
   const [leftSignLabel, setLeftSignLabel] = useState("");
   const [rightSignLabel, setRightSignLabel] = useState("");
@@ -36,19 +70,25 @@ export function Invoice({
   // Preview copies of states - now they will automatically sync or be replaced by direct props
   const [pNo, setPNo] = useState("");
   const [pClient, setPClient] = useState("");
+  const [pDiscount, setPDiscount] = useState(0);
+  const [pTax, setPTax] = useState(0);
   const [previewItems, setPreviewItems] = useState<Array<{ id: string; nama: string; qty: number; harga: number }>>([]);
 
   // Sync preview in real-time
   React.useEffect(() => {
     setPNo(invNo || (activeSubTab === 'resmi' ? "INV/SYSTEM/2026/XXXX" : "QTE/SYSTEM/2026/XXXX"));
     setPClient(invClient || "Umum / Customer");
+    setPDiscount(discount);
+    setPTax(tax);
     setPreviewItems([...items]);
-  }, [invNo, invClient, items, activeSubTab]);
+  }, [invNo, invClient, items, activeSubTab, discount, tax]);
 
   const handleTabChange = (tab: 'resmi' | 'penawaran') => {
     setActiveSubTab(tab);
     setInvNo("");
     setInvClient("");
+    setDiscount(0);
+    setTax(0);
     setItems([]);
   };
 
@@ -72,7 +112,8 @@ export function Invoice({
     window.print();
   };
 
-  const totalAmount = previewItems.reduce((acc, curr) => acc + (curr.qty * curr.harga), 0);
+  const subtotal = previewItems.reduce((acc, curr) => acc + (curr.qty * curr.harga), 0);
+  const totalAmount = subtotal - pDiscount + pTax;
 
   const exportToCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,";
@@ -92,7 +133,10 @@ export function Invoice({
         ].join(",");
         csvContent += row + "\r\n";
       });
-      csvContent += `\r\nTOTAL PERSANDINGAN,,Rp,${totalAmount}\r\n`;
+      csvContent += `\r\nSUBTOTAL,,Rp,${subtotal}\r\n`;
+      csvContent += `POTONGAN (DISCOUNT),,Rp,${pDiscount}\r\n`;
+      csvContent += `PAJAK (VAT/TAX),,Rp,${pTax}\r\n`;
+      csvContent += `TOTAL PENAGIHAN,,Rp,${totalAmount}\r\n`;
     } else {
       csvContent += "SURAT PENAWARAN HARGA (QUOTATION) KOPERASI\r\n";
       csvContent += `Nomor Penawaran,${pNo}\r\n`;
@@ -109,7 +153,10 @@ export function Invoice({
         ].join(",");
         csvContent += row + "\r\n";
       });
-      csvContent += `\r\nTOTAL ESTIMASI PENAWARAN,,Rp,${totalAmount}\r\n`;
+      csvContent += `\r\nSUBTOTAL,,Rp,${subtotal}\r\n`;
+      csvContent += `POTONGAN (DISCOUNT),,Rp,${pDiscount}\r\n`;
+      csvContent += `PAJAK (VAT/TAX),,Rp,${pTax}\r\n`;
+      csvContent += `TOTAL ESTIMASI PENAWARAN,,Rp,${totalAmount}\r\n`;
     }
 
     const encodedUri = encodeURI(csvContent);
@@ -172,13 +219,22 @@ export function Invoice({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* INPUT FORM CARD */}
         <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm self-start space-y-5">
-          <div className="border-b pb-2 mb-2">
-            <h3 className="font-bold text-sm text-gray-800">
-              {activeSubTab === 'resmi' ? 'Formulir Isian Faktur Nota Penagihan' : 'Formulir Isian Surat Penawaran Harga (Quotation)'}
-            </h3>
-            <p className="text-[11px] text-gray-400">
-              {activeSubTab === 'resmi' ? 'Silahkan Isi Rincian Tagihan' : 'Silahkan Isi Rincian Penawaran'}
-            </p>
+          <div className="border-b pb-2 mb-2 flex items-center justify-between gap-2">
+            <div>
+              <h3 className="font-bold text-sm text-gray-800">
+                {activeSubTab === 'resmi' ? 'Formulir Isian Faktur Nota Penagihan' : 'Formulir Isian Surat Penawaran Harga (Quotation)'}
+              </h3>
+              <p className="text-[11px] text-gray-400">
+                {activeSubTab === 'resmi' ? 'Silahkan Isi Rincian Tagihan' : 'Silahkan Isi Rincian Penawaran'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowSalesModal(true)}
+              className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 text-[10px] font-bold rounded-lg flex items-center gap-1 transition cursor-pointer active:scale-95"
+            >
+              <History className="h-3 w-3" /> Tarik Data POS
+            </button>
           </div>
 
           <div className="flex flex-col gap-1">
@@ -274,6 +330,35 @@ export function Invoice({
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-bold text-gray-500">
+                Pajak / PPN (Rp)
+              </label>
+              <input
+                id="inv-tax-input"
+                type="number"
+                placeholder="0"
+                className="px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-red-500 font-mono font-bold"
+                value={tax || ""}
+                onChange={(e) => setTax(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-bold text-gray-500">
+                Diskon / Potongan (Rp)
+              </label>
+              <input
+                id="inv-discount-input"
+                type="number"
+                placeholder="0"
+                className="px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-red-500 font-mono font-bold text-rose-600"
+                value={discount || ""}
+                onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+              />
             </div>
           </div>
 
@@ -431,6 +516,28 @@ export function Invoice({
 
                     <div className="h-px bg-gray-100 my-1.5" />
 
+                    {/* CALCULATION SUMMARY ROWS */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[10px]">
+                        <span className="text-gray-400 font-bold uppercase text-[8px] tracking-wider">Subtotal</span>
+                        <span className="font-mono font-bold text-gray-600">Rp{subtotal.toLocaleString('id-ID')}</span>
+                      </div>
+                      {pDiscount > 0 && (
+                        <div className="flex justify-between items-center text-[10px]">
+                          <span className="text-rose-400 font-bold uppercase text-[8px] tracking-wider">Diskon (-)</span>
+                          <span className="font-mono font-bold text-rose-500">-Rp{pDiscount.toLocaleString('id-ID')}</span>
+                        </div>
+                      )}
+                      {pTax > 0 && (
+                        <div className="flex justify-between items-center text-[10px]">
+                          <span className="text-emerald-400 font-bold uppercase text-[8px] tracking-wider">Pajak (+)</span>
+                          <span className="font-mono font-bold text-emerald-500">+Rp{pTax.toLocaleString('id-ID')}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="h-px bg-gray-100 my-1.5" />
+
                     {/* TOTAL ROW */}
                     <div className="flex justify-between items-center py-1">
                       <span className="text-xs font-black text-gray-900 uppercase">
@@ -468,6 +575,75 @@ export function Invoice({
           </button>
         </div>
       </div>
+      {/* SALES HISTORY MODAL */}
+      {showSalesModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-150 overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <History className="h-5 w-5 text-blue-400" />
+                <div>
+                  <h2 className="text-sm font-black text-white uppercase tracking-tight">Riwayat Penjualan POS</h2>
+                  <p className="text-[10px] text-slate-400 font-medium">Pilih transaksi untuk ditarik ke dalam Invoice</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSalesModal(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-b border-gray-200">
+               <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                <input 
+                  type="text"
+                  placeholder="Cari No Nota atau Nama Pelanggan..."
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+               </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2">
+              {filteredHistory.length === 0 ? (
+                <div className="py-20 text-center space-y-3">
+                  <ShoppingBag className="h-12 w-12 text-gray-200 mx-auto" />
+                  <p className="text-sm text-gray-400 font-medium">Data tidak ditemukan.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-2">
+                  {filteredHistory.map((sale) => (
+                    <button
+                      key={sale.id}
+                      onClick={() => importFromSale(sale)}
+                      className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition text-left group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition">
+                          <FileText className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black text-slate-900">{sale.id}</p>
+                          <p className="text-[10px] text-slate-500 font-semibold">{sale.tgl} • {sale.customerNama || "Umum"}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-black text-slate-900">Rp {sale.total.toLocaleString('id-ID')}</p>
+                        <p className="text-[9px] text-blue-600 font-bold uppercase tracking-widest">{sale.items.length} Item</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

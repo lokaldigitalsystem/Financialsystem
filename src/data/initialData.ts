@@ -20,7 +20,7 @@ export const INITIAL_COA: CoaAccount[] = [
   // ASET - PIUTANG
   { kode: "1-1200", nama: "PIUTANG", kategori: CoaKategori.Aset, normal: SaldoNormal.Debet, saldo: 0 },
   { kode: "1-1201", nama: "Piutang Anggota", kategori: CoaKategori.Aset, normal: SaldoNormal.Debet, saldo: 0 },
-  { kode: "1-1202", nama: "Piutang Dagang", kategori: CoaKategori.Aset, normal: SaldoNormal.Debet, saldo: 0 },
+  { kode: "1-1202", nama: "Piutang Usaha (Dagang)", kategori: CoaKategori.Aset, normal: SaldoNormal.Debet, saldo: 0 },
   { kode: "1-1203", nama: "Piutang Lain-lain", kategori: CoaKategori.Aset, normal: SaldoNormal.Debet, saldo: 0 },
 
   // ASET - PERSEDIAAN
@@ -32,6 +32,7 @@ export const INITIAL_COA: CoaAccount[] = [
   { kode: "1-1400", nama: "ASET LANCAR LAINNYA", kategori: CoaKategori.Aset, normal: SaldoNormal.Debet, saldo: 0 },
   { kode: "1-1401", nama: "Biaya Dibayar Dimuka", kategori: CoaKategori.Aset, normal: SaldoNormal.Debet, saldo: 0 },
   { kode: "1-1402", nama: "Perlengkapan Kantor", kategori: CoaKategori.Aset, normal: SaldoNormal.Debet, saldo: 0 },
+  { kode: "1-1403", nama: "Simpanan di Koperasi Lain", kategori: CoaKategori.Aset, normal: SaldoNormal.Debet, saldo: 0 },
   { kode: "1-2000", nama: "ASET TETAP", kategori: CoaKategori.Aset, normal: SaldoNormal.Debet, saldo: 0 },
   { kode: "1-2101", nama: "Tanah", kategori: CoaKategori.Aset, normal: SaldoNormal.Debet, saldo: 0 },
   { kode: "1-2102", nama: "Gedung & Bangunan", kategori: CoaKategori.Aset, normal: SaldoNormal.Debet, saldo: 0 },
@@ -42,23 +43,27 @@ export const INITIAL_COA: CoaAccount[] = [
   { kode: "1-2202", nama: "Akum. Penyusutan Kendaraan", kategori: CoaKategori.Aset, normal: SaldoNormal.Kredit, saldo: 0 },
   { kode: "1-2203", nama: "Akum. Penyusutan Peralatan", kategori: CoaKategori.Aset, normal: SaldoNormal.Kredit, saldo: 0 },
 
-  // KEWAJIBAN JANGKA PENDEK & PANJANG
-  { kode: "2-1000", nama: "KEWAJIBAN JANGKA PENDEK", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
+  // KEWAJIBAN LANCAR & JANGKA PANJANG
+  { kode: "2-1000", nama: "KEWAJIBAN LANCAR (JANGKA PENDEK)", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
   { kode: "2-1001", nama: "Hutang Dagang", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
-  { kode: "2-1002", nama: "Hutang Gaji", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
-  { kode: "2-1003", nama: "Simpanan Sukarela", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
+  { kode: "2-1002", nama: "Hutang PPN (VAT)", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
+  { kode: "2-1003", nama: "Simpanan Sukarela (Manasuka)", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
   { kode: "2-1004", nama: "Hutang Pajak", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
   { kode: "2-1005", nama: "Pendapatan Diterima Dimuka", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
+  { kode: "2-1006", nama: "Hutang Lain-lain", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
+  { kode: "2-1007", nama: "Dana SHU", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
   { kode: "2-2000", nama: "KEWAJIBAN JANGKA PANJANG", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
-  { kode: "2-2001", nama: "Hutang Bank Jangka Panjang", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
+  { kode: "2-2001", nama: "Hutang Bank", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
   { kode: "2-2002", nama: "Simpanan Berjangka Anggota", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
+  { kode: "2-2003", nama: "Hutang Ke Pihak III", kategori: CoaKategori.Kewajiban, normal: SaldoNormal.Kredit, saldo: 0 },
 
   // EKUITAS
   { kode: "3-1001", nama: "Simpanan Pokok", kategori: CoaKategori.Ekuitas, normal: SaldoNormal.Kredit, saldo: 0 },
   { kode: "3-1002", nama: "Simpanan Wajib", kategori: CoaKategori.Ekuitas, normal: SaldoNormal.Kredit, saldo: 0 },
-  { kode: "3-1003", nama: "Dana Cadangan", kategori: CoaKategori.Ekuitas, normal: SaldoNormal.Kredit, saldo: 0 },
-  { kode: "3-1004", nama: "Donasi & Hibah", kategori: CoaKategori.Ekuitas, normal: SaldoNormal.Kredit, saldo: 0 },
-  { kode: "3-2001", nama: "SHU Tahun Lalu", kategori: CoaKategori.Ekuitas, normal: SaldoNormal.Kredit, saldo: 0 },
+  { kode: "3-1003", nama: "Cadangan Umum", kategori: CoaKategori.Ekuitas, normal: SaldoNormal.Kredit, saldo: 0 },
+  { kode: "3-1004", nama: "Cadangan Risiko", kategori: CoaKategori.Ekuitas, normal: SaldoNormal.Kredit, saldo: 0 },
+  { kode: "3-1005", nama: "Donasi & Hibah", kategori: CoaKategori.Ekuitas, normal: SaldoNormal.Kredit, saldo: 0 },
+  { kode: "3-2001", nama: "SHU Tahun Sebelumnya", kategori: CoaKategori.Ekuitas, normal: SaldoNormal.Kredit, saldo: 0 },
   { kode: "3-2002", nama: "SHU Tahun Berjalan", kategori: CoaKategori.Ekuitas, normal: SaldoNormal.Kredit, saldo: 0 },
 
   // PENDAPATAN
@@ -73,7 +78,7 @@ export const INITIAL_COA: CoaAccount[] = [
 
   // BEBAN (HPP & OPERASIONAL)
   { kode: "5-1001", nama: "Harga Pokok Penjualan (HPP)", kategori: CoaKategori.Beban, normal: SaldoNormal.Debet, saldo: 0 },
-  { kode: "5-1002", nama: "Biaya Pengiriman Masuk", kategori: CoaKategori.Beban, normal: SaldoNormal.Debet, saldo: 0 },
+  { kode: "5-1002", nama: "Potongan Penjualan", kategori: CoaKategori.Beban, normal: SaldoNormal.Debet, saldo: 0 },
   { kode: "6-1000", nama: "BEBAN PEGAWAI", kategori: CoaKategori.Beban, normal: SaldoNormal.Debet, saldo: 0 },
   { kode: "6-1001", nama: "Beban Gaji Pengurus", kategori: CoaKategori.Beban, normal: SaldoNormal.Debet, saldo: 0 },
   { kode: "6-1002", nama: "Beban Gaji Karyawan", kategori: CoaKategori.Beban, normal: SaldoNormal.Debet, saldo: 0 },

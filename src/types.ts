@@ -164,6 +164,40 @@ export interface TenantInvoice {
   createdAt: string;
 }
 
+export interface PurchaseReturn {
+  id: string;
+  tgl: string;
+  stokId: string;
+  kodeBarang: string;
+  namaBarang: string;
+  qty: number;
+  hargaModal: number;
+  total: number;
+  alasan: string;
+  akunTujuan: string; // Account code for receiving the return (Cash or reduction in AP)
+}
+
+export interface PastSale {
+  id: string; // PJ-xxxx
+  tgl: string;
+  customerNama: string;
+  paymentCoa: string;
+  paymentName: string;
+  subtotal: number;
+  tax: number;
+  discount: number;
+  total: number;
+  cashReceived: number;
+  change: number;
+  items: {
+    nama: string;
+    qty: number;
+    hargaJual: number;
+    stokId?: string;
+    hargaModal?: number;
+  }[];
+}
+
 export interface SecurityAuditEvent {
   id: string;
   timestamp: string;

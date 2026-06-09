@@ -21,14 +21,15 @@ import {
   Info,
   FileDown
 } from 'lucide-react';
-import { StokItem, StokHistoriEntry } from '../types';
+import { StokItem, StokHistoriEntry, CoaAccount, CoaKategori } from '../types';
 
 interface StokProps {
   stokData: StokItem[];
   stokHistoriData: StokHistoriEntry[];
+  coaData: CoaAccount[];
   accessMode: "admin" | "view";
   onUpdateStok: (id: string, newQty: number) => void;
-  onRestockStok: (id: string, qtyAdded: number, customHargaModal: number, tgl: string, keterangan: string) => void;
+  onRestockStok: (id: string, qtyAdded: number, customHargaModal: number, tgl: string, keterangan: string, paymentCoa?: string) => void;
   onAddStok: (kode: string, nama: string, hargaJual: number, hargaModal: number, initialQty: number) => void;
   onDeleteStok: (id: string) => void;
   onDeleteStokHistori: (id: string) => void;
@@ -89,8 +90,11 @@ export function Stok(props: StokProps) {
   const [restockHargaModal, setRestockHargaModal] = useState<number>(0);
   const [restockDate, setRestockDate] = useState(new Date().toISOString().split('T')[0]);
   const [restockKet, setRestockKet] = useState("Restok barang gudang");
+  const [selectedPayCoa, setSelectedPayCoa] = useState<string>("");
   
   const [adjustQty, setAdjustQty] = useState<number>(0);
+
+  const cashBankAccounts = props.coaData.filter(c => c.kode.startsWith("1-11") || c.kode === "1-1000");
 
   // Open "restock/adjust" modal helper
   const handleOpenManageModal = (item: StokItem) => {
@@ -101,6 +105,11 @@ export function Stok(props: StokProps) {
     setRestockDate(new Date().toISOString().split('T')[0]);
     setRestockKet(`Restok tambahan ${item.nama}`);
     setAdjustQty(item.qty);
+
+    // Default to first cash/bank account if available
+    if (cashBankAccounts.length > 0) {
+      setSelectedPayCoa(cashBankAccounts[0].kode);
+    }
   };
 
   // Submit new product
@@ -146,7 +155,7 @@ export function Stok(props: StokProps) {
         alert("Jumlah penambahan harus lebih besar dari 1!");
         return;
       }
-      props.onRestockStok(selectedManageItem.id, restockQty, restockHargaModal, restockDate, restockKet);
+      props.onRestockStok(selectedManageItem.id, restockQty, restockHargaModal, restockDate, restockKet, selectedPayCoa);
     } else {
       props.onUpdateStok(selectedManageItem.id, adjustQty);
     }
@@ -1013,18 +1022,34 @@ export function Stok(props: StokProps) {
                     <span className="text-[9px] text-gray-400 mt-0.5">Def: Harga modal awal ({selectedManageItem.hargaModal?.toLocaleString('id-ID') || 'N/A'})</span>
                   </div>
 
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Keterangan Catatan Restok</label>
-                    <input
-                      id="restock-ket"
-                      type="text"
-                      placeholder="Masukkan catatan audit di sini"
-                      value={restockKet}
-                      onChange={(e) => setRestockKet(e.target.value)}
-                      className="px-3 py-2 border border-gray-200 rounded focus:outline-none focus:border-red-500 text-xs font-medium"
-                    />
-                  </div>
-                </>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Metode Pembayaran (Restok)</label>
+                      <select
+                        value={selectedPayCoa}
+                        onChange={(e) => setSelectedPayCoa(e.target.value)}
+                        className="px-3 py-2 border border-gray-200 rounded focus:outline-none focus:border-red-500 text-xs font-semibold text-gray-700 bg-white"
+                      >
+                        {cashBankAccounts.map(coa => (
+                          <option key={coa.kode} value={coa.kode}>
+                            {coa.kode} - {coa.nama}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-[9px] text-gray-400 mt-0.5 italic">* Digunakan untuk pencatatan jurnal otomatis (Kredit Kas/Bank)</span>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Keterangan Catatan Restok</label>
+                      <input
+                        id="restock-ket"
+                        type="text"
+                        placeholder="Masukkan catatan audit di sini"
+                        value={restockKet}
+                        onChange={(e) => setRestockKet(e.target.value)}
+                        className="px-3 py-2 border border-gray-200 rounded focus:outline-none focus:border-red-500 text-xs font-medium"
+                      />
+                    </div>
+                  </>
               ) : (
                 <>
                   <div className="bg-indigo-50 p-2.5 rounded border border-indigo-100 text-[11px] text-indigo-800 flex items-start gap-1.5 leading-relaxed">

@@ -32,38 +32,23 @@ import {
   Tooltip, 
   Legend 
 } from 'recharts';
-import { StokItem } from '../types';
-
-interface PastSale {
-  id: string; // PJ-xxxx
-  tgl: string;
-  customerNama: string;
-  paymentCoa: string;
-  paymentName: string;
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  cashReceived: number;
-  change: number;
-  items: {
-    nama: string;
-    qty: number;
-    hargaJual: number;
-    stokId?: string;
-    hargaModal?: number;
-  }[];
-}
+import { StokItem, CoaAccount, CoaKategori, PastSale } from '../types';
 
 interface RekapPenjualanProps {
   stokData: StokItem[];
+  coaData: CoaAccount[];
+  salesHistory: PastSale[];
+  onUpdateSalesHistory: React.Dispatch<React.SetStateAction<PastSale[]>>;
   accessMode: "admin" | "view";
   koperasiId?: string;
+  onUpdateStok?: (id: string, newQty: number, reason?: string) => void;
+  onAddJurnal?: (tgl: string, no: string, ket: string, entries: { akun: string; debet: number; kredit: number }[]) => void;
 }
 
 export function RekapPenjualan(props: RekapPenjualanProps) {
-  // Load and state for sales history loaded from localStorage
-  const [salesList, setSalesList] = useState<PastSale[]>([]);
+  // Load and state for sales history loaded from props (synchronized to Cloud)
+  const salesList = props.salesHistory;
+  const setSalesList = props.onUpdateSalesHistory;
   
   // Date selection states
   const [selectedMonth, setSelectedMonth] = useState<number>(5); // 0-indexed: May=4, June=5 (Default June)
@@ -170,7 +155,7 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
     const totalToday = salesList.filter(s => s.id.startsWith(`PJ-REKAP-${datePart}`)).length + 1;
     const generatedId = `PJ-REKAP-${datePart}-${String(totalToday).padStart(3, "0")}`;
 
-    const paymentName = inputPayment === "1-1101" ? "Kas Tunai" : "Bank BRI";
+    const paymentName = props.coaData.find(c => c.kode === inputPayment)?.nama || "Kas/Bank";
 
     const newRecord: PastSale = {
       id: generatedId,
@@ -195,9 +180,49 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
       ]
     };
 
+    // AUTOMATIC JOURNALING (INTEGRATION)
+    if (props.onAddJurnal) {
+      // 1. Journal for Revenue and Cash/Bank Reception
+      // DEBIT: Selected Payment Account (Asset)
+      // CREDIT: Pendapatan Penjualan (4-1001)
+      props.onAddJurnal(
+        generatedTgl,
+        generatedId,
+        `Rekap Penjualan Kasir (${inputKasir}) - ${pName}`,
+        [
+          { akun: inputPayment, debet: calculatedTotal, kredit: 0 },
+          { akun: "4-1001", debet: 0, kredit: calculatedTotal }
+        ]
+      );
+
+      // 2. Journal for HPP (Cost of Goods Sold) and Inventory reduction
+      // DEBIT: Harga Pokok Penjualan (5-1001)
+      // CREDIT: Persediaan Barang Dagangan (1-1301)
+      const totalHppForThisRow = inputQty * activeModal;
+      if (totalHppForThisRow > 0) {
+        props.onAddJurnal(
+          generatedTgl,
+          `HPP-${generatedId}`,
+          `Pencatatan HPP Penjualan (${pName}) - ${generatedId}`,
+          [
+            { akun: "5-1001", debet: totalHppForThisRow, kredit: 0 },
+            { akun: "1-1301", debet: 0, kredit: totalHppForThisRow }
+          ]
+        );
+      }
+    }
+
     const nextSales = [newRecord, ...salesList];
     setSalesList(nextSales);
-    localStorage.setItem(storageKey, JSON.stringify(nextSales));
+
+    // DECREMENT STOCK GUDANG (User Requirement)
+    if (!isCustomProduct && props.onUpdateStok) {
+      const match = props.stokData.find(s => s.id === selectedStokId);
+      if (match) {
+        const remainingQty = Math.max(0, match.qty - inputQty);
+        props.onUpdateStok(selectedStokId, remainingQty, `Rekap Penjualan Kasir (${inputKasir}) - Nota: ${generatedId}`);
+      }
+    }
 
     // Clear and restore states appropriately
     setInputKasir("");
@@ -218,23 +243,6 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
     setSuccessMessage(`Berhasil menyimpan rekap penjualan bulanan kasir untuk ID ${generatedId}!`);
     setTimeout(() => setSuccessMessage(""), 4000);
   };
-
-  const storageKey = props.koperasiId ? `kdmp_${props.koperasiId}_salesHistory` : 'kdmp_salesHistory';
-
-  // Load past sales + Seed default data if empty
-  useEffect(() => {
-    const raw = localStorage.getItem(storageKey);
-    let loadedSales: PastSale[] = [];
-    if (raw) {
-      try {
-        loadedSales = JSON.parse(raw);
-      } catch (e) {
-        console.error("Failed to parse sales history:", e);
-      }
-    }
-
-    setSalesList(loadedSales);
-  }, [storageKey]);
 
   // Filter list of sales to the selected month and year
   const activeMonthSales = salesList.filter(sale => {
@@ -359,7 +367,6 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
     if (confirm("Apakah Anda yakin ingin menghapus log penjualan ini dari sejarah rekap bulanan? (Tindakan ini tidak membatalkan transaksi jurnal atau mengembalikan stok fisik)")) {
       const upd = salesList.filter(s => s.id !== id);
       setSalesList(upd);
-      localStorage.setItem(storageKey, JSON.stringify(upd));
       if (selectedReceipt && selectedReceipt.id === id) {
         setSelectedReceipt(null);
       }
@@ -567,8 +574,12 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
                   onChange={(e) => setInputPayment(e.target.value)}
                   className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:border-red-500 font-bold bg-white text-gray-800"
                 >
-                  <option value="1-1101">Kas Tunai (1-1101)</option>
-                  <option value="1-1102">Bank BRI (1-1102)</option>
+                  {props.coaData
+                    .filter(c => c.kode.startsWith("1-11")) // Filter for Kas & Bank specifically
+                    .map(c => (
+                      <option key={c.kode} value={c.kode}>{c.nama} ({c.kode})</option>
+                    ))
+                  }
                 </select>
               </div>
 

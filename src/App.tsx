@@ -18,6 +18,7 @@ import {
   Lock, 
   Sun,
   Moon,
+  BookOpen,
   PanelLeftClose,
   PanelLeft,
   Menu,
@@ -32,10 +33,12 @@ import {
   TrendingUp,
   Settings,
   LifeBuoy,
-  CreditCard
+  CreditCard,
+  RotateCcw,
+  Scale
 } from 'lucide-react';
 
-import { CoaAccount, CoaKategori, SaldoNormal, JurnalEntry, StokItem, Anggota, RekeningBank, StokHistoriEntry, Tagihan, FixedAsset, KontakLain, SecurityAuditEvent } from './types';
+import { CoaAccount, CoaKategori, SaldoNormal, JurnalEntry, StokItem, Anggota, RekeningBank, StokHistoriEntry, Tagihan, FixedAsset, KontakLain, SecurityAuditEvent, PurchaseReturn, PastSale } from './types';
 import { INITIAL_COA, INITIAL_JURNAL, INITIAL_STOK, INITIAL_ANGGOTA, INITIAL_REKENING, INITIAL_STOK_HISTORI, INITIAL_KONTAK_LAIN } from './data/initialData';
 
 // Component imports
@@ -43,6 +46,7 @@ import { INITIAL_COA, INITIAL_JURNAL, INITIAL_STOK, INITIAL_ANGGOTA, INITIAL_REK
 import kopdesLogo from './assets/images/regenerated_image_1780605758249.jpg';
 import { Dashboard } from './components/Dashboard';
 import { Jurnal } from './components/Jurnal';
+import { BukuBesar } from './components/BukuBesar';
 import { COA } from './components/COA';
 import { Stok } from './components/Stok';
 import { AnggotaList } from './components/Anggota';
@@ -54,9 +58,11 @@ import { AsetTetap } from './components/AsetTetap';
 import { Kontak } from './components/Kontak';
 import { StockOpname } from './components/StockOpname';
 import { RekapPenjualan } from './components/RekapPenjualan';
+import { ReturPembelian } from './components/ReturPembelian';
 import { Pengaturan } from './components/Pengaturan';
 import { SuperAdmin } from './components/SuperAdmin';
 import { SupportTicket } from './components/SupportTicket';
+import { DataValidationEngine } from './components/DataValidationEngine';
 import { TenantBilling } from './components/TenantBilling';
 import { SecurityAudit } from './components/SecurityAudit';
 import { logSecurityEvent } from './utils/auditLogger';
@@ -180,6 +186,7 @@ export default function App() {
   const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isSupportMode, setIsSupportMode] = useState(false);
+  const [isTenantRemoteControl, setIsTenantRemoteControl] = useState(false);
   const [originalKoperasiId, setOriginalKoperasiId] = useState<string | null>(null);
   const [tenantStatus, setTenantStatus] = useState<"Active" | "Trial" | "Suspended" | null>(null);
   const [tenantPlan, setTenantPlan] = useState<"Trial" | "Basic" | "Premium" | "Enterprise">("Trial");
@@ -335,6 +342,7 @@ export default function App() {
       tagihan: false,
       rekening: false,
       assets: false,
+      salesHistory: false,
       meta: false
     });
 
@@ -365,6 +373,9 @@ export default function App() {
     
     const savedAssets = localStorage.getItem(`kdmp_${koperasiId}_fixedAssets`);
     setFixedAssets(savedAssets ? JSON.parse(savedAssets) : []);
+
+    const savedSalesHistory = localStorage.getItem(`kdmp_${koperasiId}_salesHistory`);
+    setSalesHistory(savedSalesHistory ? JSON.parse(savedSalesHistory) : []);
 
     // Load existing scoped data or fall back to system defaults
     // This provides instant UI transition before Cloud snapshot arrives
@@ -398,19 +409,19 @@ export default function App() {
 
   // Dynamic Koperasi Profile Details & Print configuration
   const [koperasiName, setKoperasiName] = useState<string>(
-    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiName`) || localStorage.getItem('kdmp_koperasiName') || "FINANCIAL SYSTEM"
+    () => (koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_koperasiName`) : null) || localStorage.getItem('kdmp_koperasiName') || "FINANCIAL SYSTEM"
   );
   const [koperasiAlamat, setKoperasiAlamat] = useState<string>(
-    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiAlamat`) || localStorage.getItem('kdmp_koperasiAlamat') || "Sistem Informasi Akuntansi & Operasional Komprehensif"
+    () => (koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_koperasiAlamat`) : null) || localStorage.getItem('kdmp_koperasiAlamat') || "Sistem Informasi Akuntansi & Operasional Komprehensif"
   );
   const [koperasiLogo, setKoperasiLogo] = useState<string>(
-    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiLogo`) || localStorage.getItem('kdmp_koperasiLogo') || ""
+    () => (koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_koperasiLogo`) : null) || localStorage.getItem('kdmp_koperasiLogo') || ""
   );
   const [koperasiInvoiceSize, setKoperasiInvoiceSize] = useState<string>(
-    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiInvoiceSize`) || localStorage.getItem('kdmp_koperasiInvoiceSize') || "A4"
+    () => (koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_koperasiInvoiceSize`) : null) || localStorage.getItem('kdmp_koperasiInvoiceSize') || "A4"
   );
   const [koperasiSubtext, setKoperasiSubtext] = useState<string>(
-    () => localStorage.getItem(`kdmp_${koperasiId}_koperasiSubtext`) || localStorage.getItem('kdmp_koperasiSubtext') || "Professional Enterprise Resource Planning"
+    () => (koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_koperasiSubtext`) : null) || localStorage.getItem('kdmp_koperasiSubtext') || "Professional Enterprise Resource Planning"
   );
 
   // User accounts with roles and permissions
@@ -563,6 +574,7 @@ export default function App() {
 
   // Shared state for navigation filters to relate COA, Jurnal, and Dashboard
   const [jurnalFilter, setJurnalFilter] = useState("");
+  const [bukubesarInitialAccount, setBukubesarInitialAccount] = useState<string | undefined>(undefined);
   const [coaCategoryFilter, setCoaCategoryFilter] = useState("");
   const [coaSearchFilter, setCoaSearchFilter] = useState("");
 
@@ -800,6 +812,23 @@ export default function App() {
     return [];
   });
 
+  const [salesHistory, setSalesHistory] = useState<PastSale[]>(() => {
+    const raw = koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_salesHistory`) : localStorage.getItem('kdmp_salesHistory');
+    if (raw) {
+      try {
+        return JSON.parse(raw);
+      } catch (e) {
+        // Fallback
+      }
+    }
+    return [];
+  });
+
+  const [returPembelianData, setReturPembelianData] = useState<PurchaseReturn[]>(() => {
+    const raw = koperasiId ? localStorage.getItem(`kdmp_${koperasiId}_returPembelianData`) : localStorage.getItem('kdmp_returPembelianData');
+    return raw ? JSON.parse(raw) : [];
+  });
+
   // Watch for changes in coaData to automatically sync bank balances perfectly
   useEffect(() => {
     const updatedRekenings = rekeningData.map(r => {
@@ -874,6 +903,7 @@ export default function App() {
   const lastTagihanRef = React.useRef<Tagihan[]>([]);
   const lastRekeningRef = React.useRef<RekeningBank[]>([]);
   const lastFixedAssetsRef = React.useRef<FixedAsset[]>([]);
+  const lastSalesHistoryRef = React.useRef<PastSale[]>([]);
 
   // Cloud Real-Time Listener Effect Block
   useEffect(() => {
@@ -899,6 +929,7 @@ export default function App() {
          setKoperasiLogo(meta.logo);
          setKoperasiInvoiceSize(meta.invoiceSize);
          setKoperasiSubtext(meta.subtext);
+         setIsTenantRemoteControl(data.isUnderRemoteSupport || false);
       } else {
          // Reset to defaults if tenant doesn't exist in cloud
          setKoperasiName("FINANCIAL SYSTEM");
@@ -1079,6 +1110,25 @@ export default function App() {
       setCloudStatus(prev => ({ ...prev, assets: true }));
     });
 
+    // 12. Sales History
+    const unsubSales = onSnapshot(collection(db, "koperasi", koperasiId, "salesHistory"), (snap) => {
+      if (snap.metadata?.hasPendingWrites) return;
+      const list: PastSale[] = [];
+      snap.forEach(d => list.push(d.data() as PastSale));
+      
+      const cloudStr = JSON.stringify(list.sort((a,b) => a.id.localeCompare(b.id)));
+      const localStr = JSON.stringify(lastSalesHistoryRef.current.sort((a,b) => a.id.localeCompare(b.id)));
+
+      if (cloudStr !== localStr) {
+        lastSalesHistoryRef.current = list;
+        setSalesHistory(list);
+      }
+      setCloudStatus(prev => ({ ...prev, salesHistory: true }));
+    }, (err) => {
+      handleCloudError(err, OperationType.LIST, `koperasi/${koperasiId}/salesHistory`);
+      setCloudStatus(prev => ({ ...prev, salesHistory: true }));
+    });
+
     return () => {
       unsubMeta();
       unsubUsers();
@@ -1091,6 +1141,7 @@ export default function App() {
       unsubTagihan();
       unsubRekening();
       unsubAssets();
+      unsubSales();
     };
   }, [koperasiId]);
 
@@ -1340,6 +1391,31 @@ export default function App() {
     lastFixedAssetsRef.current = local;
   }, [fixedAssets, koperasiId, cloudStatus.assets, accessMode]);
 
+  // Sales History Writeback
+  useEffect(() => {
+    if (!koperasiId || !cloudStatus.salesHistory || accessMode === "login") return;
+    const local = salesHistory;
+    const dbVal = lastSalesHistoryRef.current;
+    
+    // We only sync items that are not in DB or are different
+    local.forEach(item => {
+      const match = dbVal.find(d => d.id === item.id);
+      if (!match || JSON.stringify(match) !== JSON.stringify(item)) {
+        setDoc(doc(db, "koperasi", koperasiId, "salesHistory", item.id), item)
+          .catch(err => handleCloudError(err, OperationType.WRITE, `koperasi/${koperasiId}/salesHistory/${item.id}`));
+      }
+    });
+
+    // Cleanup deleted items from cloud
+    dbVal.forEach(item => {
+      if (!local.some(l => l.id === item.id)) {
+        deleteDoc(doc(db, "koperasi", koperasiId, "salesHistory", item.id))
+          .catch(err => handleCloudError(err, OperationType.DELETE, `koperasi/${koperasiId}/salesHistory/${item.id}`));
+      }
+    });
+    lastSalesHistoryRef.current = local;
+  }, [salesHistory, koperasiId, cloudStatus.salesHistory, accessMode]);
+
   // Optimistic save fallbacks for offline support
   useEffect(() => {
     localStorage.setItem('kdmp_koperasiId', koperasiId);
@@ -1384,6 +1460,11 @@ export default function App() {
     if (!koperasiId) return;
     localStorage.setItem(`kdmp_${koperasiId}_rekeningData`, JSON.stringify(rekeningData));
   }, [rekeningData, koperasiId]);
+
+  useEffect(() => {
+    if (!koperasiId) return;
+    localStorage.setItem(`kdmp_${koperasiId}_salesHistory`, JSON.stringify(salesHistory));
+  }, [salesHistory, koperasiId]);
 
   useEffect(() => {
     if (!koperasiId) return;
@@ -1966,11 +2047,10 @@ export default function App() {
       setOriginalKoperasiId(koperasiId);
     }
     
-    // Clear current metadata before switching to prevent leakage to new tenant's local storage
-    setKoperasiName("");
-    setKoperasiLogo("");
-    setKoperasiAlamat("");
-    
+    // Set flag in cloud to notify the tenant
+    setDoc(doc(db, "koperasi", targetId), { isUnderRemoteSupport: true }, { merge: true })
+      .catch(e => console.warn("Failed to notify remote session in cloud:", e));
+
     setKoperasiId(targetId);
     setIsSupportMode(true);
 
@@ -1993,12 +2073,14 @@ export default function App() {
 
   const handleExitSupportMode = () => {
     const backupOriginal = originalKoperasiId;
+    const currentlyRemoting = koperasiId;
     
-    // Clear sensitive metadata from memory before switching back
-    setKoperasiName("");
-    setKoperasiLogo("");
-    setKoperasiAlamat("");
-    
+    // Clear flag in tenant doc
+    if (currentlyRemoting) {
+      setDoc(doc(db, "koperasi", currentlyRemoting), { isUnderRemoteSupport: false }, { merge: true })
+        .catch(e => console.warn("Failed to clear remote session notification:", e));
+    }
+
     if (originalKoperasiId) {
       setKoperasiId(originalKoperasiId);
       setOriginalKoperasiId(null);
@@ -2095,9 +2177,9 @@ export default function App() {
     
     // Set default name if not configured
     setKoperasiName("Supercloud Integrated System");
-    localStorage.setItem('kdmp_koperasiName', "Supercloud Integrated System");
+    localStorage.setItem(`kdmp_${targetTenant}_koperasiName`, "Supercloud Integrated System");
     setKoperasiAlamat("Induk Koperasi Operasional Digital");
-    localStorage.setItem('kdmp_koperasiAlamat', "Induk Koperasi Operasional Digital");
+    localStorage.setItem(`kdmp_${targetTenant}_koperasiAlamat`, "Induk Koperasi Operasional Digital");
 
     // Log the sensitive master bypass access
     logSecurityEvent({
@@ -2309,6 +2391,59 @@ export default function App() {
       const nextCOAs = [...coaData, newAccount];
       setCoaData(nextCOAs);
       localStorage.setItem('kdmp_coaData', JSON.stringify(nextCOAs));
+
+      // AUTOMATIC JOURNALLING FOR OPENING BALANCE
+      if (saldo !== 0) {
+        const tgl = new Date().toISOString().split('T')[0];
+        const now = Date.now();
+        const no = "SALDOAWAL-" + now.toString().slice(-6);
+        const modalAccount = "3-2001"; // SHU Tahun Sebelumnya (Laba Ditahan)
+        
+        let entryDr: JurnalEntry;
+        let entryCr: JurnalEntry;
+
+        const isDebitNormal = kategori === CoaKategori.Aset || kategori === CoaKategori.Beban;
+        
+        if (isDebitNormal) {
+          // Asset/Expense: Debit the new account, Credit Modal
+          entryDr = {
+            id: "sa-dr-" + now,
+            tgl, no, ket: `[SALDO AWAL] ${nama}`,
+            akun: kode, debet: Math.abs(saldo), kredit: 0
+          };
+          entryCr = {
+            id: "sa-cr-" + now,
+            tgl, no, ket: `[SALDO AWAL] ${nama}`,
+            akun: modalAccount, debet: 0, kredit: Math.abs(saldo)
+          };
+        } else {
+          // Liability/Equity/Revenue: Debit Modal, Credit the new account
+          entryDr = {
+            id: "sa-dr-" + now,
+            tgl, no, ket: `[SALDO AWAL] ${nama}`,
+            akun: modalAccount, debet: Math.abs(saldo), kredit: 0
+          };
+          entryCr = {
+            id: "sa-cr-" + now,
+            tgl, no, ket: `[SALDO AWAL] ${nama}`,
+            akun: kode, debet: 0, kredit: Math.abs(saldo)
+          };
+        }
+
+        setJurnalData(prev => [entryDr, entryCr, ...prev]);
+
+        // Also update the equilibrium account balance in COA
+        const updatedNextCOAs = nextCOAs.map(c => {
+          if (c.kode === modalAccount) {
+            // If Modal is Kredit-normal and we Credit it (isDebitNormal=true), increase balance
+            // If Modal is Kredit-normal and we Debit it (isDebitNormal=false), decrease balance
+            return { ...c, saldo: isDebitNormal ? c.saldo + Math.abs(saldo) : c.saldo - Math.abs(saldo) };
+          }
+          return c;
+        });
+        setCoaData(updatedNextCOAs);
+        localStorage.setItem('kdmp_coaData', JSON.stringify(updatedNextCOAs));
+      }
     }
   };
 
@@ -2458,7 +2593,7 @@ export default function App() {
   };
 
   // RE-STOCK LOGISTIC
-  const handleUpdateStok = (id: string, newQty: number) => {
+  const handleUpdateStok = (id: string, newQty: number, reason?: string) => {
     const item = stokData.find(s => s.id === id);
     if (item) {
       const diff = newQty - item.qty;
@@ -2473,7 +2608,7 @@ export default function App() {
           qtySecaraFisik: newQty,
           qtyAdded: diff,
           hargaModal: hgModal,
-          keterangan: diff > 0 ? "Penyesuaian manual (Ditambahkan)" : "Penyesuaian manual (Dikurangi)"
+          keterangan: reason || (diff > 0 ? "Penyesuaian manual (Ditambahkan)" : "Penyesuaian manual (Dikurangi)")
         };
         setStokHistoriData(prev => [newHistori, ...prev]);
       }
@@ -2487,10 +2622,11 @@ export default function App() {
     setStokData(nextStoks);
   };
 
-  const handleRestockStok = (id: string, qtyAdded: number, customHargaModal: number, tgl: string, keterangan: string) => {
+  const handleRestockStok = (id: string, qtyAdded: number, customHargaModal: number, tgl: string, keterangan: string, paymentCoa?: string) => {
     const item = stokData.find(s => s.id === id);
     if (item) {
       const actualHargaModal = customHargaModal > 0 ? customHargaModal : (item.hargaModal || Math.round(item.hargaJual * 0.75));
+      const totalCost = qtyAdded * actualHargaModal;
       const nextStoks = stokData.map(s => {
         if (s.id === id) {
           return { 
@@ -2515,6 +2651,43 @@ export default function App() {
         keterangan: keterangan || "Restok barang dagang"
       };
       setStokHistoriData(prev => [newHistori, ...prev]);
+
+      // AUTOMATIC JOURNALLING
+      if (paymentCoa && totalCost > 0) {
+        // Journal entry for Restock: Debit Inventory (1-1301) and Credit Cash/Bank (paymentCoa)
+        const journalIdDr = "j-restock-dr-" + Date.now();
+        const journalIdCr = "j-restock-cr-" + Date.now();
+        
+        const entryDr: JurnalEntry = {
+          id: journalIdDr,
+          tgl: tgl || new Date().toISOString().split('T')[0],
+          no: "INV-PURCH-" + Date.now().toString().slice(-6),
+          ket: `[RESTOK] ${item.nama} x ${qtyAdded} unit`,
+          akun: "1-1301", // Persediaan Barang Dagangan
+          debet: totalCost,
+          kredit: 0
+        };
+
+        const entryCr: JurnalEntry = {
+          id: journalIdCr,
+          tgl: tgl || new Date().toISOString().split('T')[0],
+          no: "INV-PURCH-" + Date.now().toString().slice(-6),
+          ket: `[RESTOK] ${item.nama} x ${qtyAdded} unit`,
+          akun: paymentCoa, // Selected Cash/Bank account
+          debet: 0,
+          kredit: totalCost
+        };
+
+        setJurnalData(prev => [entryDr, entryCr, ...prev]);
+        
+        // Update COA balances
+        const nextCOAs = coaData.map(c => {
+          if (c.kode === "1-1301") return { ...c, saldo: c.saldo + totalCost };
+          if (c.kode === paymentCoa) return { ...c, saldo: c.saldo - totalCost };
+          return c;
+        });
+        setCoaData(nextCOAs);
+      }
     }
   };
 
@@ -2560,7 +2733,12 @@ export default function App() {
     no: string,
     customerNama: string,
     methodCoaKode: string,
-    items: { stokId: string; qty: number; hargaJual: number; hargaModal: number }[]
+    items: { stokId: string; qty: number; hargaJual: number; hargaModal: number }[],
+    ppn: number = 0,
+    diskon: number = 0,
+    paymentName?: string,
+    cashReceived?: number,
+    change?: number
   ): Promise<void> => {
     if (accessMode === "view") {
       throw new Error("Akses Ditolak: Akun 'View Only' tidak diijinkan merekam transaksi penjualan.");
@@ -2571,8 +2749,31 @@ export default function App() {
 
     const totalJual = items.reduce((sum, item) => sum + (item.qty * item.hargaJual), 0);
     const totalModal = items.reduce((sum, item) => sum + (item.qty * item.hargaModal), 0);
+    const grandTotal = totalJual + ppn - diskon;
     const now = Date.now();
     const online = typeof navigator !== 'undefined' ? (navigator.onLine && isOnline) : isOnline;
+
+    const pastSaleObj: PastSale = {
+      id: no,
+      tgl,
+      customerNama,
+      paymentCoa: methodCoaKode,
+      paymentName: paymentName || "Tunai",
+      subtotal: totalJual,
+      tax: ppn,
+      discount: diskon,
+      total: grandTotal,
+      cashReceived: cashReceived !== undefined ? cashReceived : grandTotal,
+      change: change !== undefined ? change : 0,
+      items: items.map(it => {
+        const product = stokData.find(s => s.id === it.stokId);
+        return {
+          nama: product?.nama || "Barang",
+          qty: it.qty,
+          hargaJual: it.hargaJual
+        };
+      })
+    };
 
     try {
       if (online) {
@@ -2616,20 +2817,37 @@ export default function App() {
           }
 
           // 3. Post double-entry accounting journals atomically
-          // Journal 1: Kas/Bank Account (Debet) & Pendapatan Barang (Kredit)
+          // Journal 1: Kas/Bank Account (Debet)
           const j1Id = `j-${now}-sale-dr-${methodCoaKode}`;
           const j1Ref = doc(db, "koperasi", koperasiId, "jurnal", j1Id);
           const j1: JurnalEntry = {
             id: j1Id,
             tgl,
             no,
-            ket: `Penjualan barang dagang POS (${customerNama})`,
+            ket: `Penjualan POS (${customerNama})`,
             akun: methodCoaKode,
-            debet: totalJual,
+            debet: grandTotal,
             kredit: 0
           };
           transaction.set(j1Ref, j1);
 
+          // Journal 2: Potongan Penjualan (Debet)
+          if (diskon > 0) {
+            const disId = `j-${now}-sale-dr-discount`;
+            const disRef = doc(db, "koperasi", koperasiId, "jurnal", disId);
+            const jDis: JurnalEntry = {
+              id: disId,
+              tgl,
+              no,
+              ket: `Potongan/Diskon Penjualan POS (${customerNama})`,
+              akun: "5-1002",
+              debet: diskon,
+              kredit: 0
+            };
+            transaction.set(disRef, jDis);
+          }
+
+          // Journal 3: Pendapatan Penjualan (Kredit)
           const j2Id = `j-${now}-sale-cr-rev`;
           const j2Ref = doc(db, "koperasi", koperasiId, "jurnal", j2Id);
           const j2: JurnalEntry = {
@@ -2642,6 +2860,22 @@ export default function App() {
             kredit: totalJual
           };
           transaction.set(j2Ref, j2);
+
+          // Journal 4: Hutang PPN (Kredit)
+          if (ppn > 0) {
+            const taxId = `j-${now}-sale-cr-tax`;
+            const taxRef = doc(db, "koperasi", koperasiId, "jurnal", taxId);
+            const jTax: JurnalEntry = {
+              id: taxId,
+              tgl,
+              no,
+              ket: `PPN Penjualan POS (${customerNama})`,
+              akun: "2-1002",
+              debet: 0,
+              kredit: ppn
+            };
+            transaction.set(taxRef, jTax);
+          }
 
           // Journal 2: HPP (Debet) & Persediaan Barang (Kredit)
           if (totalModal > 0) {
@@ -2671,6 +2905,10 @@ export default function App() {
             };
             transaction.set(persediaanRef, persediaan);
           }
+
+          // 5. Save Sale History summary record
+          const saleRef = doc(db, "koperasi", koperasiId, "salesHistory", no);
+          transaction.set(saleRef, pastSaleObj);
         });
       } else {
         // FALLBACK: OFFLINE MODE (No network)
@@ -2708,12 +2946,27 @@ export default function App() {
           id: j1Id,
           tgl,
           no,
-          ket: `[OFFLINE] Penjualan barang dagang POS (${customerNama})`,
+          ket: `[OFFLINE] Penjualan POS (${customerNama})`,
           akun: methodCoaKode,
-          debet: totalJual,
+          debet: grandTotal,
           kredit: 0
         };
         await setDoc(j1Ref, j1);
+
+        if (diskon > 0) {
+          const disId = `j-${now}-sale-dr-discount`;
+          const disRef = doc(db, "koperasi", koperasiId, "jurnal", disId);
+          const jDis: JurnalEntry = {
+            id: disId,
+            tgl,
+            no,
+            ket: `[OFFLINE] Potongan/Diskon Penjualan POS (${customerNama})`,
+            akun: "5-1002",
+            debet: diskon,
+            kredit: 0
+          };
+          await setDoc(disRef, jDis);
+        }
 
         const j2Id = `j-${now}-sale-cr-rev`;
         const j2Ref = doc(db, "koperasi", koperasiId, "jurnal", j2Id);
@@ -2727,6 +2980,21 @@ export default function App() {
           kredit: totalJual
         };
         await setDoc(j2Ref, j2);
+
+        if (ppn > 0) {
+          const taxId = `j-${now}-sale-cr-tax`;
+          const taxRef = doc(db, "koperasi", koperasiId, "jurnal", taxId);
+          const jTax: JurnalEntry = {
+            id: taxId,
+            tgl,
+            no,
+            ket: `[OFFLINE] PPN Penjualan POS (${customerNama})`,
+            akun: "2-1002",
+            debet: 0,
+            kredit: ppn
+          };
+          await setDoc(taxRef, jTax);
+        }
 
         if (totalModal > 0) {
           const hppId = `j-${now}-sale-hpp-dr`;
@@ -2755,7 +3023,14 @@ export default function App() {
           };
           await setDoc(persediaanRef, persediaan);
         }
+
+        // 3. Save History record directly
+        const saleRef = doc(db, "koperasi", koperasiId, "salesHistory", no);
+        await setDoc(saleRef, pastSaleObj);
       }
+
+      // Update State immediately for best UX
+      setSalesHistory(prev => [pastSaleObj, ...prev]);
     } catch (err: any) {
       console.error("Kesalahan Transaksi Checkout POS: ", err);
       // Ensure we call handleCloudError for complete error logging / system visibility
@@ -3022,6 +3297,7 @@ export default function App() {
       // 5. Clear Sales History (Ranked Products)
       localStorage.removeItem(storageKey);
       localStorage.removeItem('kdmp_salesHistory'); // legacy
+      setSalesHistory([]);
     } else {
       // Restore initial simulator demonstration data
       setJurnalData(INITIAL_JURNAL);
@@ -3208,9 +3484,52 @@ export default function App() {
       status: "Belum Bayar"
     };
     setTagihanData([...tagihanData, newTagihan]);
+
+    // AUTOMATIC JOURNALLING: Debit Piutang vs Kredit Pendapatan
+    if (jumlah > 0) {
+      const tgl = tglTagihan || new Date().toISOString().split('T')[0];
+      const now = Date.now();
+      const journalIdDr = "j-tagihan-dr-" + now;
+      const journalIdCr = "j-tagihan-cr-" + now;
+      
+      const entryDr: JurnalEntry = {
+        id: journalIdDr,
+        tgl,
+        no: id,
+        ket: `[TAGIHAN] ${kategori} - ${member.nama} (${keterangan})`,
+        akun: "1-1201", // Piutang Anggota
+        debet: jumlah,
+        kredit: 0
+      };
+
+      const entryCr: JurnalEntry = {
+        id: journalIdCr,
+        tgl,
+        no: id,
+        ket: `[TAGIHAN] ${kategori} - ${member.nama} (${keterangan})`,
+        akun: "4-1003", // Pendapatan Unit Usaha Lain
+        debet: 0,
+        kredit: jumlah
+      };
+
+      setJurnalData(prev => [entryDr, entryCr, ...prev]);
+
+      // Update COA balances
+      setCoaData(prev => prev.map(c => {
+        if (c.kode === "1-1201") return { ...c, saldo: c.saldo + jumlah }; // Asset (Debit increases)
+        if (c.kode === "4-1003") return { ...c, saldo: c.saldo + jumlah }; // Pendapatan (Kredit increases)
+        return c;
+      }));
+    }
   };
 
   const handleUpdateTagihanStatus = (id: string, status: "Belum Bayar" | "Lunas") => {
+    const oldTagihan = tagihanData.find(t => t.id === id);
+    if (!oldTagihan) return;
+    
+    // Only journal if changing to Lunas from Belum Bayar
+    const shouldJournal = oldTagihan.status === "Belum Bayar" && status === "Lunas";
+
     const nextTagihans = tagihanData.map(t => {
       if (t.id === id) {
         return { ...t, status };
@@ -3218,10 +3537,108 @@ export default function App() {
       return t;
     });
     setTagihanData(nextTagihans);
+
+    if (shouldJournal) {
+      const tgl = new Date().toISOString().split('T')[0];
+      const now = Date.now();
+      const journalIdDr = "j-pay-dr-" + now;
+      const journalIdCr = "j-pay-cr-" + now;
+      
+      const entryDr: JurnalEntry = {
+        id: journalIdDr,
+        tgl,
+        no: oldTagihan.id,
+        ket: `[BAYAR] Pelunasan Tagihan ${oldTagihan.kategori} - ${oldTagihan.anggotaNama}`,
+        akun: "1-1101", // Kas Tunai
+        debet: oldTagihan.jumlah,
+        kredit: 0
+      };
+
+      const entryCr: JurnalEntry = {
+        id: journalIdCr,
+        tgl,
+        no: oldTagihan.id,
+        ket: `[BAYAR] Pelunasan Tagihan ${oldTagihan.kategori} - ${oldTagihan.anggotaNama}`,
+        akun: "1-1201", // Piutang Anggota
+        debet: 0,
+        kredit: oldTagihan.jumlah
+      };
+
+      setJurnalData(prev => [entryDr, entryCr, ...prev]);
+
+      // Update COA balances
+      setCoaData(prev => prev.map(c => {
+        if (c.kode === "1-1101") return { ...c, saldo: c.saldo + oldTagihan.jumlah }; // Asset (Debit increases)
+        if (c.kode === "1-1201") return { ...c, saldo: c.saldo - oldTagihan.jumlah }; // Asset (Kredit decreases)
+        return c;
+      }));
+    }
   };
 
   const handleDeleteTagihan = (id: string) => {
     setTagihanData(tagihanData.filter(t => t.id !== id));
+  };
+
+  const handleAddReturPembelian = (retur: Omit<PurchaseReturn, 'id'>) => {
+    const now = Date.now();
+    const newId = `RET-${now}`;
+    const newRetur: PurchaseReturn = { ...retur, id: newId };
+    
+    // 1. Update Stok
+    const nextStoks = stokData.map(s => {
+      if (s.id === retur.stokId) {
+        return { ...s, qty: s.qty - retur.qty };
+      }
+      return s;
+    });
+    setStokData(nextStoks);
+
+    // 2. Add History Stok
+    const newHist: StokHistoriEntry = {
+      id: `log-retur-${now}`,
+      tgl: retur.tgl,
+      stokId: retur.stokId,
+      kodeBarang: retur.kodeBarang,
+      namaBarang: retur.namaBarang,
+      qtySecaraFisik: nextStoks.find(s => s.id === retur.stokId)!.qty,
+      qtyAdded: -retur.qty,
+      hargaModal: retur.hargaModal,
+      keterangan: `[Retur Pembelian] ${retur.alasan}`
+    };
+    const nextHist = [newHist, ...stokHistoriData];
+    setStokHistoriData(nextHist);
+
+    // 3. Create Jurnal
+    const journalIdDr = `j-ret-dr-${now}`;
+    const journalIdCr = `j-ret-cr-${now}`;
+    const entryDr: JurnalEntry = {
+      id: journalIdDr,
+      tgl: retur.tgl,
+      no: newId,
+      ket: `[RETUR] ${retur.namaBarang} - ${retur.alasan}`,
+      akun: retur.akunTujuan,
+      debet: retur.total,
+      kredit: 0
+    };
+    const inventoryAccount = coaData.find(c => c.nama.toLowerCase().includes("stok") || c.kode === "1-1301")?.kode || "1-1301";
+    const entryCr: JurnalEntry = {
+      id: journalIdCr,
+      tgl: retur.tgl,
+      no: newId,
+      ket: `[RETUR] ${retur.namaBarang} - ${retur.alasan}`,
+      akun: inventoryAccount,
+      debet: 0,
+      kredit: retur.total
+    };
+    setJurnalData(prev => [entryDr, entryCr, ...prev]);
+
+    // 4. Save Retur Data
+    const nextRetur = [newRetur, ...returPembelianData];
+    setReturPembelianData(nextRetur);
+  };
+
+  const handleDeleteReturPembelian = (id: string) => {
+    setReturPembelianData(returPembelianData.filter(r => r.id !== id));
   };
 
   const handleClearAllTagihan = () => {
@@ -3294,8 +3711,11 @@ export default function App() {
             anggotaData={anggotaData} 
             stokData={stokData}
             tagihanData={tagihanData}
+            salesHistory={salesHistory}
+            onUpdateSalesHistory={setSalesHistory}
             onNavigate={handleDashboardNavigation} 
             onResetData={handleResetData}
+            koperasiId={koperasiId}
           />
         );
       case "jurnal":
@@ -3310,12 +3730,21 @@ export default function App() {
             onSearchQueryChange={setJurnalFilter}
           />
         );
+      case "bukubesar":
+        return (
+          <BukuBesar 
+            coaData={coaData} 
+            jurnalData={jurnalData} 
+            initialAccountCode={bukubesarInitialAccount}
+          />
+        );
       case "stok":
         return renderPageWithGuard(
           "stok",
           <Stok 
             stokData={stokData} 
             stokHistoriData={stokHistoriData}
+            coaData={coaData}
             accessMode={accessMode as any} 
             onUpdateStok={handleUpdateStok} 
             onRestockStok={handleRestockStok}
@@ -3334,18 +3763,38 @@ export default function App() {
             stokData={stokData}
             accessMode={accessMode as any}
             onBulkOpname={handleBulkOpname}
+            onAddJurnal={handleAddJurnal}
           />,
           "stockopname",
           "Premium",
           "Stock Opname Fisik"
+        );
+      case "returpembelian":
+        return renderPageWithGuard(
+          "returpembelian",
+          <ReturPembelian 
+            stokData={stokData}
+            coaData={coaData}
+            returData={returPembelianData}
+            onAddRetur={handleAddReturPembelian}
+            onDeleteRetur={handleDeleteReturPembelian}
+          />,
+          "returpembelian",
+          "Basic",
+          "Retur Pembelian"
         );
       case "rekappenjualan":
         return renderPageWithGuard(
           "rekappenjualan",
           <RekapPenjualan 
             stokData={stokData}
+            coaData={coaData}
+            salesHistory={salesHistory}
+            onUpdateSalesHistory={setSalesHistory}
             accessMode={accessMode as any}
             koperasiId={koperasiId}
+            onUpdateStok={handleUpdateStok}
+            onAddJurnal={handleAddJurnal}
           />,
           "stok",
           "Basic",
@@ -3402,6 +3851,8 @@ export default function App() {
             anggotaData={anggotaData}
             rekeningData={rekeningData}
             coaData={coaData}
+            salesHistory={salesHistory}
+            onUpdateSalesHistory={setSalesHistory}
             accessMode={accessMode as any}
             onRecordSale={handleRecordSale}
             koperasiId={koperasiId}
@@ -3436,6 +3887,9 @@ export default function App() {
             koperasiAlamat={koperasiAlamat}
             koperasiLogo={koperasiLogo}
             koperasiInvoiceSize={koperasiInvoiceSize}
+            koperasiId={koperasiId}
+            salesHistory={salesHistory}
+            onUpdateSalesHistory={setSalesHistory}
           />,
           "invoice",
           "Premium",
@@ -3472,7 +3926,32 @@ export default function App() {
             kontakLainData={kontakLainData}
             tagihanData={tagihanData}
             fixedAssets={fixedAssets}
+            onUpdateStokData={setStokData}
+            onUpdateJurnalData={setJurnalData}
+            onUpdateCoaData={setCoaData}
+            onUpdateStokHistoriData={setStokHistoriData}
+            onUpdateAnggotaData={setAnggotaData}
+            onUpdateKontakLainData={setKontakLainData}
+            onUpdateTagihanData={setTagihanData}
+            onUpdateFixedAssets={setFixedAssets}
           />
+        );
+      case "audit":
+        return (
+          <div className="space-y-6 animate-in fade-in duration-200 text-left">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-150">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-red-600/10 text-red-600 rounded-xl">
+                  <ShieldAlert className="h-6 w-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Audit Validitas Saldo Awal</h2>
+                  <p className="text-xs text-slate-500">Menganalisis keseimbangan Neraca awal pada bagan akun (COA).</p>
+                </div>
+              </div>
+              <DataValidationEngine coaData={coaData} />
+            </div>
+          </div>
         );
       case "laporan":
         return renderPageWithGuard(
@@ -3529,8 +4008,8 @@ export default function App() {
             categoryFilter={coaCategoryFilter}
             onCategoryFilterChange={setCoaCategoryFilter}
             onNavigateToJurnal={(code) => {
-              setJurnalFilter(code);
-              setActivePage("jurnal");
+              setBukubesarInitialAccount(code);
+              setActivePage("bukubesar");
             }}
           />
         );
@@ -3542,6 +4021,8 @@ export default function App() {
             anggotaData={anggotaData} 
             stokData={stokData}
             tagihanData={tagihanData}
+            salesHistory={salesHistory}
+            onUpdateSalesHistory={setSalesHistory}
             onNavigate={handleDashboardNavigation} 
             onResetData={handleResetData}
             koperasiId={koperasiId}
@@ -4606,11 +5087,13 @@ export default function App() {
     if (!currentUserDetail) return false;
     if (currentUserDetail.username === "SuperIT") return true; 
 
-    if (pageId === "pengaturan" || pageId === "security_audit") {
+    if (pageId === "pengaturan" || pageId === "security_audit" || pageId === "audit") {
       return !!currentUserDetail.canAccessSettings;
     }
 
     const allowed = currentUserDetail.permittedPages || [];
+    if (pageId === "bukubesar") return allowed.includes("jurnal");
+    if (pageId === "returpembelian") return allowed.includes("stok");
     return allowed.includes(pageId);
   };
 
@@ -4844,7 +5327,21 @@ export default function App() {
                 title={isSidebarCollapsed ? "Jurnal Umum" : ""}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'jurnal' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
               >
-                <Notebook className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Jurnal Umum Ledger</span>}
+                <Notebook className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Jurnal Umum</span>}
+              </button>
+            )}
+
+            {isPagePermitted('jurnal') && (
+              <button 
+                id="nav-bukubesar"
+                onClick={() => {
+                  setBukubesarInitialAccount(undefined);
+                  setActivePage('bukubesar');
+                }}
+                title={isSidebarCollapsed ? "Buku Besar" : ""}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'bukubesar' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
+              >
+                <BookOpen className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Buku Besar Ledger</span>}
               </button>
             )}
 
@@ -4873,6 +5370,20 @@ export default function App() {
               >
                 <ClipboardCheck className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Stock Opname Gudang</span>}
                 {!isModuleUnlocked('stockopname') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
+              </button>
+            )}
+
+            {isPagePermitted('stok') && (
+              <button 
+                id="nav-returpembelian"
+                onClick={() => {
+                  setActivePage('returpembelian');
+                }}
+                title={isSidebarCollapsed ? "Retur Pembelian" : ""}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'returpembelian' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
+              >
+                <RotateCcw className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Retur Pembelian</span>}
+                {!isModuleUnlocked('stok') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
               </button>
             )}
 
@@ -4931,6 +5442,19 @@ export default function App() {
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'coa' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                   >
                     <ListTodo className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Chart of Accounts (COA)</span>}
+                  </button>
+                )}
+
+                {isPagePermitted('audit') && (
+                  <button 
+                    id="nav-audit"
+                    onClick={() => {
+                      setActivePage('audit');
+                    }}
+                    title={isSidebarCollapsed ? "Audit & Validasi" : ""}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'audit' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
+                  >
+                    <Scale className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Audit Validasi Data</span>}
                   </button>
                 )}
 
@@ -5082,6 +5606,28 @@ export default function App() {
 
       {/* CORE DISPLAY WINDOW */}
       <main className={`flex-1 p-5 md:p-8 overflow-y-auto relative transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-900 text-slate-100' : 'bg-slate-100 text-slate-900'}`}>
+        {/* Support Notification Banner for Tenant */}
+        {isTenantRemoteControl && !isSupportMode && (
+          <div className="mb-6 bg-rose-600 text-white px-6 py-4 rounded-[2rem] flex flex-col md:flex-row items-center justify-between shadow-2xl relative z-10 border-b-4 border-rose-800 animate-in slide-in-from-top-4 duration-500 gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-white/20 rounded-2xl animate-pulse">
+                <ShieldAlert className="h-6 w-6 text-white" />
+              </div>
+              <div className="text-left">
+                <p className="text-[10px] font-black uppercase tracking-widest text-rose-100 opacity-80">Security Awareness Notification</p>
+                <p className="text-xs font-bold leading-relaxed mt-0.5">
+                  Aplikasi Anda saat ini sedang di remote oleh <span className="font-black bg-white/10 px-2 py-0.5 rounded mx-1">Team Support Lokal Digital System</span>. 
+                  Sesi investigasi jarak jauh sedang berlangsung untuk bantuan teknis.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 bg-rose-900/30 rounded-full border border-white/20">
+               <span className="h-2 w-2 rounded-full bg-white animate-ping"></span>
+               <span className="text-[10px] font-black uppercase tracking-widest">Sesi Aktif</span>
+            </div>
+          </div>
+        )}
+
         {/* REMOTE SUPPORT BANNER */}
         {isSupportMode && (
           <div className="mb-6 bg-slate-900 border-b-4 border-amber-500 rounded-3xl overflow-hidden shadow-2xl animate-in slide-in-from-top-4 duration-500">
@@ -5097,7 +5643,7 @@ export default function App() {
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1 font-medium leading-relaxed">
                     Aplikasi saat ini sedang di remote oleh <span className="text-amber-400 font-bold underline underline-offset-4 decoration-amber-500/30">Team Support Lokal Digital System</span>. 
-                    Anda sedang mengakses workspace tenant <span className="text-white font-black bg-slate-800 px-2 py-0.5 rounded ml-1">{koperasiId}</span>.
+                    Anda sedang mengakses workspace tenant <span className="text-white font-black bg-slate-800 px-2 py-0.5 rounded ml-1">{koperasiId}</span>. Semua perubahan data akan langsung tersimpan di database penyewa.
                   </p>
                 </div>
               </div>

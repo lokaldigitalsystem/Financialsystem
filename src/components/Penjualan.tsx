@@ -23,20 +23,27 @@ import {
   FileDown,
   RefreshCw
 } from 'lucide-react';
-import { StokItem, Anggota, RekeningBank, CoaAccount } from '../types';
+import { StokItem, Anggota, RekeningBank, CoaAccount, PastSale } from '../types';
 
 interface PenjualanProps {
   stokData: StokItem[];
   anggotaData: Anggota[];
   rekeningData: RekeningBank[];
   coaData: CoaAccount[];
+  salesHistory: PastSale[];
+  onUpdateSalesHistory: React.Dispatch<React.SetStateAction<PastSale[]>>;
   accessMode: "admin" | "view";
   onRecordSale: (
     tgl: string,
     no: string,
     customerNama: string,
     methodCoaKode: string,
-    items: { stokId: string; qty: number; hargaJual: number; hargaModal: number }[]
+    items: { stokId: string; qty: number; hargaJual: number; hargaModal: number }[],
+    ppn: number,
+    diskon: number,
+    paymentName: string,
+    cashReceived: number,
+    change: number
   ) => Promise<void>;
   koperasiName?: string;
   koperasiId?: string;
@@ -50,25 +57,6 @@ interface CartItem {
   hargaModal: number;
   qty: number;
   maxStock: number;
-}
-
-interface PastSale {
-  id: string; // PJ-xxxx
-  tgl: string;
-  customerNama: string;
-  paymentCoa: string;
-  paymentName: string;
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  cashReceived: number;
-  change: number;
-  items: {
-    nama: string;
-    qty: number;
-    hargaJual: number;
-  }[];
 }
 
 export function Penjualan(props: PenjualanProps) {
@@ -100,23 +88,8 @@ export function Penjualan(props: PenjualanProps) {
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [currentReceipt, setCurrentReceipt] = useState<PastSale | null>(null);
 
-  const storageKey = props.koperasiId ? `kdmp_${props.koperasiId}_salesHistory` : 'kdmp_salesHistory';
-
-  // Past Sales History list (stored in localStorage session)
-  const [salesHistory, setSalesHistory] = useState<PastSale[]>(() => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      return raw ? JSON.parse(raw) : [];
-    } catch (e) {
-      console.error("Failed to load sales history from localStorage:", e);
-      return [];
-    }
-  });
-
-  // Sync sales history to localStorage
-  useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(salesHistory));
-  }, [salesHistory, storageKey]);
+  const salesHistory = props.salesHistory;
+  const setSalesHistory = props.onUpdateSalesHistory;
 
   // Generate transaction number
   const generateSaleNo = () => {
@@ -294,12 +267,23 @@ export function Penjualan(props: PenjualanProps) {
 
     setIsSubmitting(true);
     try {
+      const receiptItems = cart.map(c => ({
+        nama: c.nama,
+        qty: c.qty,
+        hargaJual: c.hargaJual
+      }));
+
       await props.onRecordSale(
         saleDate,
         saleNo,
         clientNama,
         selectedPayCoa,
-        saleItems
+        saleItems,
+        cartTax,
+        discountAmount,
+        getSelectedPaymentName(),
+        cashAmount > 0 ? cashAmount : grandTotal,
+        cashAmount > 0 ? changeAmount : 0
       );
 
       // Save into internal receipt history log
@@ -315,14 +299,8 @@ export function Penjualan(props: PenjualanProps) {
         total: grandTotal,
         cashReceived: cashAmount > 0 ? cashAmount : grandTotal,
         change: cashAmount > 0 ? changeAmount : 0,
-        items: cart.map(c => ({
-          nama: c.nama,
-          qty: c.qty,
-          hargaJual: c.hargaJual
-        }))
+        items: receiptItems
       };
-
-      setSalesHistory(prev => [receiptObj, ...prev]);
 
       // Open receipt invoice view
       setCurrentReceipt(receiptObj);
