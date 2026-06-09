@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Coins, 
   FileText, 
@@ -22,9 +23,21 @@ import {
   ChevronRight,
   ChevronLeft,
   Save,
-  CheckCircle2
+  CheckCircle2,
+  X,
+  Plus,
+  Check,
+  Download,
+  Settings2,
+  Filter,
+  ListTodo,
+  Notebook,
+  Boxes,
+  Briefcase,
+  RotateCcw
 } from 'lucide-react';
-import { CoaAccount, CoaKategori, SaldoNormal, JurnalEntry, Anggota, Tagihan } from '../types';
+import * as XLSX from 'xlsx';
+import { CoaAccount, CoaKategori, SaldoNormal, JurnalEntry, Anggota, Tagihan, RekeningBank, PastSale, StokItem, StokHistoriEntry, KontakLain, FixedAsset, PurchaseReturn } from '../types';
 import { 
   ResponsiveContainer, 
   BarChart, 
@@ -41,6 +54,13 @@ interface LaporanProps {
   jurnalData: JurnalEntry[];
   anggotaData?: Anggota[];
   tagihanData?: Tagihan[];
+  rekeningData?: RekeningBank[];
+  salesHistory?: PastSale[];
+  stokData?: StokItem[];
+  stokHistoriData?: StokHistoriEntry[];
+  kontakLainData?: KontakLain[];
+  fixedAssets?: FixedAsset[];
+  returPembelianData?: PurchaseReturn[];
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -132,6 +152,39 @@ export function Laporan(props: LaporanProps) {
     'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
   ];
+
+  // --- BUNDLE EXPORT SELECTION STATE ---
+  const [showBundleModal, setShowBundleModal] = useState(false);
+  const [selectedSheets, setSelectedSheets] = useState<Record<string, boolean>>({
+    coa: true,
+    jurnal_umum: true,
+    buku_besar: true,
+    anggota: true,
+    kasbank: true,
+    penjualan: true,
+    shu: true,
+    neraca: true,
+    arus_kas: true,
+    pembagian_shu: true,
+    rekap_simpanan: true,
+    rekap_pinjaman: true,
+    stok: true,
+    stok_histori: true,
+    kontak: true,
+    tagihan: true,
+    fixed_assets: true,
+    retur_pembelian: true
+  });
+
+  const toggleSheet = (key: string) => {
+    setSelectedSheets(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const selectAllSheets = (val: boolean) => {
+    const next = { ...selectedSheets };
+    Object.keys(next).forEach(k => next[k] = val);
+    setSelectedSheets(next);
+  };
 
   // Compile totals
   const pendapatanToko = props.coaData.find(c => c.kode === '4-1001')?.saldo || 0;
@@ -763,6 +816,370 @@ export function Laporan(props: LaporanProps) {
     document.body.removeChild(link);
   };
 
+  const exportBundleExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const curPeriod = selectedMonth === 'tahunan' ? 'Tahunan 2026' : `${monthNames[selectedMonth]} 2026`;
+
+    // 1. Sheet COA
+    if (selectedSheets.coa) {
+      const coaSheetData = coaData.map(c => ({
+        'Kode Akun': c.kode,
+        'Nama Akun': c.nama,
+        'Kategori': c.kategori,
+        'Saldo Normal': c.normal,
+        'Saldo Akhir (Rp)': c.saldo
+      }));
+      const coaWs = XLSX.utils.json_to_sheet(coaSheetData);
+      XLSX.utils.book_append_sheet(wb, coaWs, "Daftar Akun (COA)");
+    }
+
+    // 2. Sheet Jurnal Umum
+    if (selectedSheets.jurnal_umum) {
+      const juSheetData = jurnalData.map(j => ({
+        'Tanggal': j.tgl,
+        'No Bukti': j.no,
+        'Kode Akun': j.akun,
+        'Keterangan': j.ket,
+        'Debet (Rp)': j.debet,
+        'Kredit (Rp)': j.kredit
+      })).sort((a, b) => a.Tanggal.localeCompare(b.Tanggal));
+      const juWs = XLSX.utils.json_to_sheet(juSheetData);
+      XLSX.utils.book_append_sheet(wb, juWs, "Jurnal Umum");
+    }
+
+    // 2b. Sheet Buku Besar
+    if (selectedSheets.buku_besar) {
+      // Group by Account
+      const bbGroupedRows: any[] = [];
+      const uniqAccounts = [...new Set(jurnalData.map(j => j.akun))].sort();
+      
+      uniqAccounts.forEach(accCode => {
+        const accInfo = coaData.find(c => c.kode === accCode);
+        const entries = jurnalData
+          .filter(j => j.akun === accCode)
+          .sort((a, b) => a.tgl.localeCompare(b.tgl));
+        
+        bbGroupedRows.push({ 'Kode Akun': `AKUN: ${accCode} - ${accInfo?.nama || ''}`, 'Tanggal': '', 'No Bukti': '', 'Keterangan': '', 'Debet (Rp)': '', 'Kredit (Rp)': '' });
+        
+        entries.forEach(e => {
+          bbGroupedRows.push({
+            'Kode Akun': accCode,
+            'Tanggal': e.tgl,
+            'No Bukti': e.no,
+            'Keterangan': e.ket,
+            'Debet (Rp)': e.debet,
+            'Kredit (Rp)': e.kredit
+          });
+        });
+        bbGroupedRows.push({ 'Kode Akun': '', 'Tanggal': '', 'No Bukti': '', 'Keterangan': '', 'Debet (Rp)': '', 'Kredit (Rp)': '' }); // Spacing
+      });
+
+      const bbWs = XLSX.utils.json_to_sheet(bbGroupedRows);
+      XLSX.utils.book_append_sheet(wb, bbWs, "Buku Besar");
+    }
+
+    // 3. Sheet Daftar Anggota
+    if (selectedSheets.anggota) {
+      const anggotaSheetData = (anggotaData || []).map(m => ({
+        'ID': m.id,
+        'Nama': m.nama,
+        'Alamat': m.alamat,
+        'Status': m.status,
+        'NIK': m.nik || '',
+        'No HP': m.noHp || '',
+        'Simpanan Pokok (Rp)': m.simpananPokok
+      }));
+      const anggotaWs = XLSX.utils.json_to_sheet(anggotaSheetData);
+      XLSX.utils.book_append_sheet(wb, anggotaWs, "Daftar Anggota");
+    }
+
+    // 4. Saldo Kas & Bank
+    if (selectedSheets.kasbank) {
+      const kbSheetData = coaData.filter(c => c.kode.startsWith('1-11')).map(c => ({
+        'Kode Akun': c.kode,
+        'Nama Rekening': c.nama,
+        'Saldo Aktual (Rp)': c.saldo
+      }));
+      const kbWs = XLSX.utils.json_to_sheet(kbSheetData);
+      XLSX.utils.book_append_sheet(wb, kbWs, "Saldo Kas & Bank");
+    }
+
+    // 5. Rekap Penjualan
+    if (selectedSheets.penjualan) {
+      const salesHistoryData = props.salesHistory || [];
+      const salesSheetData = salesHistoryData.map(s => ({
+        'ID Penjualan': s.id,
+        'Tanggal': s.tgl,
+        'Nama Pelanggan': s.customerNama,
+        'Total (Rp)': s.total,
+        'Metode Pembayaran': s.paymentName
+      }));
+      const salesWs = XLSX.utils.json_to_sheet(salesSheetData);
+      XLSX.utils.book_append_sheet(wb, salesWs, "Rekap Penjualan");
+    }
+
+    // 6. Laporan Laba Rugi (SHU)
+    if (selectedSheets.shu) {
+      const lrData = [
+        ["LAPORAN LABA RUGI (SHU) KOPERASI"],
+        [`Periode: ${curPeriod}`],
+        [],
+        ["Uraian Akun", "Jumlah (Rp)"],
+        ["A. PENDAPATAN OPERASIONAL"],
+        ...incomeAccounts.map(a => [`   - ${a.nama}`, a.amount]),
+        ["TOTAL PENDAPATAN", selectedTotalPendapatan],
+        [],
+        ["B. HARGA POKOK PENJUALAN (HPP)"],
+        ...hppAccounts.map(a => [`   - ${a.nama}`, a.amount]),
+        ["TOTAL HPP", selectedTotalHpp],
+        [],
+        ["LABA KOTOR (GROSS PROFIT)", selectedLabaKotor],
+        [],
+        ["C. BIAYA OPERASIONAL & UMUM"],
+        ...operationalAccounts.map(a => [`   - ${a.nama}`, a.amount]),
+        ["TOTAL BIAYA OPERASIONAL", selectedTotalOperational],
+        [],
+        ["D. BIAYA LAIN-LAIN (FINANSIAL/PAJAK)"],
+        ...financialAccounts.map(a => [`   - ${a.nama}`, a.amount]),
+        ...taxAccounts.map(a => [`   - ${a.nama}`, a.amount]),
+        ["TOTAL BIAYA LAIN-LAIN", selectedTotalFinancial + selectedTotalTax],
+        [],
+        ["SHU BERSIH (NET PROFIT)", selectedShuBersih]
+      ];
+      const lrWs = XLSX.utils.aoa_to_sheet(lrData);
+      XLSX.utils.book_append_sheet(wb, lrWs, "Laporan SHU");
+    }
+
+    // 7. Laporan Neraca
+    if (selectedSheets.neraca) {
+      const nrcHeaderRow = ["AKTIVA (ASET)", "", "PASIVA (KEWAJIBAN & MODAL)"];
+      const nrcSubHeaderRow = ["Nama Akun", "Saldo (Rp)", "Nama Akun", "Saldo (Rp)"];
+      
+      const leftSide = assetsList.map(a => [a.nama, a.balance]);
+      const rightSide = [
+        ...liabilitiesLancarList.map(l => [l.nama, l.balance]),
+        ...liabilitiesPanjangList.map(l => [l.nama, l.balance]),
+        ...equityList.map(e => [e.nama, e.balance]),
+        ["SHU Berjalan", selectedNeracaShu]
+      ];
+
+      const nrcTableRows = [];
+      const maxRows = Math.max(leftSide.length, rightSide.length);
+      for (let i = 0; i < maxRows; i++) {
+        nrcTableRows.push([
+          leftSide[i]?.[0] || "",
+          leftSide[i]?.[1] || "",
+          rightSide[i]?.[0] || "",
+          rightSide[i]?.[1] || ""
+        ]);
+      }
+
+      const nrcData = [
+        ["LAPORAN NERACA POSISI KEUANGAN"],
+        [`Periode: ${curPeriod}`],
+        [],
+        nrcHeaderRow,
+        nrcSubHeaderRow,
+        ...nrcTableRows,
+        ["TOTAL AKTIVA", totalAktiva, "TOTAL PASIVA", totalPasiva]
+      ];
+
+      const nrcWs = XLSX.utils.aoa_to_sheet(nrcData);
+      XLSX.utils.book_append_sheet(wb, nrcWs, "Laporan Neraca");
+    }
+
+    // 8. Laporan Arus Kas
+    if (selectedSheets.arus_kas) {
+      const akData = [
+        ["LAPORAN ARUS KAS LEMBAGA"],
+        [`Periode: ${curPeriod}`],
+        [],
+        ["KATEGORI ARUS KAS", "JUMLAH (RP)"],
+        ["A. ARUS KAS DARI AKTIVITAS OPERASIONAL", cashFlow.totalOp],
+        ["   - Penerimaan dari Pendapatan", cashFlow.opIn_Revenue],
+        ["   - Pembayaran Beban/Biaya", -cashFlow.opOut_Expense],
+        ["   - Perubahan Aktiva/Pasiva Lancar", cashFlow.op_WorkingCapital],
+        [],
+        ["B. ARUS KAS DARI AKTIVITAS INVESTASI", cashFlow.totalInv],
+        ["   - Penjualan Aset / Investasi Masuk", cashFlow.invIn],
+        ["   - Pembelian Aset / Investasi Keluar", -cashFlow.invOut],
+        [],
+        ["C. ARUS KAS DARI AKTIVITAS PENDANAAN", cashFlow.totalFin],
+        ["   - Penerimaan Modal/Pinjaman", cashFlow.finIn],
+        ["   - Pembayaran Modal/Pinjaman", -cashFlow.finOut],
+        [],
+        ["SALDO AWAL KAS", cashFlow.saldoAwal],
+        ["KENAIKAN/PENURUNAN BERSIH", cashFlow.netChange],
+        ["SALDO AKHIR KAS", cashFlow.saldoAkhir]
+      ];
+      const akWs = XLSX.utils.aoa_to_sheet(akData);
+      XLSX.utils.book_append_sheet(wb, akWs, "Laporan Arus Kas");
+    }
+
+    // 9. Laporan Pembagian SHU (Detail Hak Payout Anggota)
+    if (selectedSheets.pembagian_shu) {
+      const shuHeader = [
+        ["LAPORAN PEMBAGIAN SISA HASIL USAHA (SHU) RAT"],
+        [`Periode: ${curPeriod}`],
+        [`SHU Bersih Alokasi: Rp ${activeShuNominal.toLocaleString('id-ID')}`],
+        [],
+        ["PARAMATER DISTRIBUSI (RASIO RAT):"],
+        [`- Cadangan Koperasi (${percentCadangan}%): Rp ${nominalCadangan.toLocaleString('id-ID')}`],
+        [`- Jasa Modal (Simpanan) (${percentJasaModal}%): Rp ${nominalJasaModal.toLocaleString('id-ID')}`],
+        [`- Jasa Anggota (Transaksi) (${percentJasaUsaha}%): Rp ${nominalJasaUsaha.toLocaleString('id-ID')}`],
+        [`- Dana Pengurus (${percentPengurus}%): Rp ${nominalPengurus.toLocaleString('id-ID')}`],
+        [`- Dana Sosial (${percentSosial}%): Rp ${nominalSosial.toLocaleString('id-ID')}`],
+        [`- Dana Pendidikan (${percentPendidikan}%): Rp ${nominalPendidikan.toLocaleString('id-ID')}`],
+        [`- Dana PEADES (${percentPeades}%): Rp ${nominalPeades.toLocaleString('id-ID')}`],
+        [],
+        ["DETAIL HAK PAYOUT SHU PER ANGGOTA:"],
+        ["ID Anggota", "Nama Anggota", "Simpanan Pokok (Rp)", "Partisipasi Belanja (Rp)", "Hak Jasa Modal (Rp)", "Hak Jasa Anggota (Rp)", "TOTAL HAK SHU (Rp)"]
+      ];
+
+      const shuRows = ratSimulationList.map(r => [
+        r.id,
+        r.nama,
+        r.simpanan,
+        r.transaksiPaid,
+        Math.round(r.shuJasaModal),
+        Math.round(r.shuJasaUsaha),
+        Math.round(r.totalShuReceived)
+      ]);
+
+      const shuWs = XLSX.utils.aoa_to_sheet([...shuHeader, ...shuRows]);
+      XLSX.utils.book_append_sheet(wb, shuWs, "Pembagian SHU Anggota");
+    }
+
+    // 10. Rekap Simpanan
+    if (selectedSheets.rekap_simpanan) {
+      const simpRows = (anggotaData || []).map(m => {
+        const rc = memberRecapData[m.id] || { pokok: 0, wajib: 0, sukarela: 0 };
+        return {
+          'ID': m.id,
+          'Nama Anggota': m.nama,
+          'Simpanan Pokok (Rp)': rc.pokok,
+          'Simpanan Wajib (Rp)': rc.wajib,
+          'Simpanan Sukarela (Rp)': rc.sukarela,
+          'Total Simpanan (Rp)': rc.pokok + rc.wajib + rc.sukarela
+        };
+      });
+      const simpWs = XLSX.utils.json_to_sheet(simpRows);
+      XLSX.utils.book_append_sheet(wb, simpWs, "Rekap Simpanan");
+    }
+
+    // 11. Rekap Pinjaman
+    if (selectedSheets.rekap_pinjaman) {
+      const pinjRows = (anggotaData || []).map(m => {
+        const rc = memberRecapData[m.id] || { pinjaman: 0 };
+        return {
+          'ID': m.id,
+          'Nama Anggota': m.nama,
+          'Saldo Pinjaman (Rp)': rc.pinjaman,
+          'Status': rc.pinjaman > 0 ? 'Aktif' : 'Lunas'
+        };
+      });
+      const pinjWs = XLSX.utils.json_to_sheet(pinjRows);
+      XLSX.utils.book_append_sheet(wb, pinjWs, "Rekap Pinjaman");
+    }
+
+    // 12. Stok & Logistik Gudang
+    if (selectedSheets.stok) {
+      const stokSheetData = (props.stokData || []).map(s => ({
+        'ID': s.id,
+        'Kode': s.kode,
+        'Nama Barang': s.nama,
+        'Harga Jual (Rp)': s.hargaJual,
+        'Stok Tersedia': s.qty,
+        'Potensi Nilai Jual (Rp)': s.hargaJual * s.qty
+      }));
+      const stokWs = XLSX.utils.json_to_sheet(stokSheetData);
+      XLSX.utils.book_append_sheet(wb, stokWs, "Inventaris Stok");
+    }
+
+    // 9. Riwayat Stok
+    if (selectedSheets.stok_histori) {
+      const histSheetData = (props.stokHistoriData || []).map(h => ({
+        'Tanggal': h.tgl,
+        'Kode Barang': h.kodeBarang,
+        'Nama Barang': h.namaBarang,
+        'Qty Fisik': h.qtySecaraFisik,
+        'Perubahan Qty': h.qtyAdded,
+        'Harga Modal (Rp)': h.hargaModal,
+        'Keterangan': h.keterangan
+      }));
+      const histWs = XLSX.utils.json_to_sheet(histSheetData);
+      XLSX.utils.book_append_sheet(wb, histWs, "Audit Riwayat Stok");
+    }
+
+    // 10. Kontak
+    if (selectedSheets.kontak) {
+      const kontakSheetData = (props.kontakLainData || []).map(k => ({
+        'ID': k.id,
+        'Nama': k.nama,
+        'Telepon': k.noHp || '',
+        'Email': k.email || '',
+        'Alamat': k.alamat || '',
+        'Tipe': k.tipe,
+        'Jabatan/Perusahaan': k.jabatanAtauPerusahaan || ''
+      }));
+      const kontakWs = XLSX.utils.json_to_sheet(kontakSheetData);
+      XLSX.utils.book_append_sheet(wb, kontakWs, "Database Kontak");
+    }
+
+    // 11. Tagihan
+    if (selectedSheets.tagihan) {
+      const tagihanSheetData = (tagihanData || []).map(t => ({
+        'ID': t.id,
+        'Nama Anggota': t.anggotaNama,
+        'Kategori': t.kategori,
+        'Jumlah (Rp)': t.jumlah,
+        'Tanggal': t.tglTagihan,
+        'Status': t.status,
+        'Keterangan': t.keterangan
+      }));
+      const tagihanWs = XLSX.utils.json_to_sheet(tagihanSheetData);
+      XLSX.utils.book_append_sheet(wb, tagihanWs, "Daftar Tagihan");
+    }
+
+    // 12. Aset Tetap
+    if (selectedSheets.fixed_assets) {
+      const asetSheetData = (props.fixedAssets || []).map(a => ({
+        'ID': a.id,
+        'Nama Aset': a.nama,
+        'Kategori': a.kategori,
+        'Tanggal Perolehan': a.tglPerolehan,
+        'Harga Perolehan (Rp)': a.hargaPerolehan
+      }));
+      const asetWs = XLSX.utils.json_to_sheet(asetSheetData);
+      XLSX.utils.book_append_sheet(wb, asetWs, "Aset Tetap");
+    }
+
+    // 13. Retur Pembelian
+    if (selectedSheets.retur_pembelian) {
+      const returSheetData = (props.returPembelianData || []).map(r => ({
+        'ID': r.id,
+        'Tanggal': r.tgl,
+        'Kode Barang': r.kodeBarang,
+        'Nama Barang': r.namaBarang,
+        'Qty Retur': r.qty,
+        'Harga Modal (Rp)': r.hargaModal,
+        'Total (Rp)': r.total,
+        'Alasan': r.alasan,
+        'Akun Tujuan': r.akunTujuan
+      }));
+      const returWs = XLSX.utils.json_to_sheet(returSheetData);
+      XLSX.utils.book_append_sheet(wb, returWs, "Retur Pembelian");
+    }
+
+    if (wb.SheetNames.length === 0) {
+      alert("Pilih minimal satu kategori data untuk di-export!");
+      return;
+    }
+
+    XLSX.writeFile(wb, `LAPORAN_KONSOLIDASI_${curPeriod.replace(/\s+/g, '_')}.xlsx`);
+    setShowBundleModal(false);
+  };
+
   return (
     <div>
       <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-4 mb-6 border-red-100 gap-4">
@@ -809,8 +1226,131 @@ export function Laporan(props: LaporanProps) {
           >
             <FileDown className="h-3.5 w-3.5" /> Export CSV (Excel)
           </button>
+          
+          <button
+            id="export-bundle-excel-btn"
+            onClick={() => setShowBundleModal(true)}
+            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-sm transition active:scale-95 cursor-pointer flex items-center gap-1.5"
+            title="Download consolidated Excel report with selectable data sheets"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" /> Bundle Report (.xlsx)
+          </button>
         </div>
       </div>
+
+      {/* --- BUNDLE EXPORT MODAL --- */}
+      <AnimatePresence>
+        {showBundleModal && (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowBundleModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg border border-slate-200 relative overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-200">
+                    <FileSpreadsheet className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-800 uppercase tracking-tight text-sm">Konsolidasi Laporan Excel</h3>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Pilih kategori data untuk di-export</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowBundleModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition text-slate-400 hover:text-slate-600">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="p-6 max-h-[60vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Daftar Sheet Tersedia</span>
+                  <div className="flex items-center gap-4">
+                    <button onClick={() => selectAllSheets(true)} className="text-[10px] font-black text-indigo-600 uppercase hover:underline">Pilih Semua</button>
+                    <button onClick={() => selectAllSheets(false)} className="text-[10px] font-black text-rose-600 uppercase hover:underline">Kosongkan</button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { key: 'coa', label: 'Bagan Akun (COA)', icon: ListTodo },
+                    { key: 'jurnal_umum', label: 'Jurnal Umum', icon: Notebook },
+                    { key: 'buku_besar', label: 'Buku Besar', icon: Notebook },
+                    { key: 'anggota', label: 'Database Anggota', icon: Users },
+                    { key: 'kasbank', label: 'Saldo Kas & Bank', icon: Landmark },
+                    { key: 'penjualan', label: 'Rekap Penjualan', icon: TrendingUp },
+                    { key: 'shu', label: 'Laporan Laba Rugi', icon: Percent },
+                    { key: 'neraca', label: 'Laporan Neraca', icon: Scale },
+                    { key: 'arus_kas', label: 'Arus Kas Lembaga', icon: Coins },
+                    { key: 'pembagian_shu', label: 'Pembagian SHU', icon: Percent },
+                    { key: 'rekap_simpanan', label: 'Rekap Simpanan', icon: PiggyBank },
+                    { key: 'rekap_pinjaman', label: 'Rekap Pinjaman', icon: Wallet },
+                    { key: 'stok', label: 'Stok & Logistik', icon: Boxes },
+                    { key: 'stok_histori', label: 'Log Audit Stok', icon: Activity },
+                    { key: 'kontak', label: 'Buku Kontak', icon: Landmark },
+                    { key: 'tagihan', label: 'Piutang / Tagihan', icon: FileText },
+                    { key: 'fixed_assets', label: 'Aset Tetap', icon: Briefcase },
+                    { key: 'retur_pembelian', label: 'Retur Pembelian', icon: RotateCcw },
+                  ].map((item) => (
+                    <button
+                      key={item.key}
+                      onClick={() => toggleSheet(item.key)}
+                      className={`flex items-center gap-3 p-3 rounded-2xl border transition-all text-left ${
+                        selectedSheets[item.key] 
+                          ? 'bg-indigo-50 border-indigo-200 text-indigo-900 shadow-sm' 
+                          : 'bg-white border-slate-100 text-slate-400 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className={`p-1.5 rounded-lg ${selectedSheets[item.key] ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                        <item.icon className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-[10.5px] font-black leading-none uppercase truncate">{item.label}</p>
+                        <p className="text-[9px] font-bold opacity-60 mt-0.5 leading-none">{selectedSheets[item.key] ? 'Termasuk' : 'Dikecualikan'}</p>
+                      </div>
+                      {selectedSheets[item.key] && (
+                        <div className="bg-indigo-600 text-white rounded-full p-0.5">
+                          <Check className="h-2.5 w-2.5" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-6 p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-start gap-3">
+                  <Settings2 className="h-4.5 w-4.5 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-[9.5px] text-amber-800 font-bold leading-relaxed">
+                    Sistem akan menggabungkan seluruh data di atas ke dalam satu file <span className="underline">.xlsx</span> dengan tab sheet terpisah untuk memudahkan audit manual dan pelaporan tahunan.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center gap-3">
+                <button 
+                  onClick={() => setShowBundleModal(false)}
+                  className="flex-1 py-3 bg-white hover:bg-slate-50 text-slate-500 text-[10px] font-black uppercase tracking-widest rounded-xl transition border border-slate-200"
+                >
+                  Batal
+                </button>
+                <button 
+                  onClick={exportBundleExcel}
+                  className="flex-[2] py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition shadow-lg shadow-indigo-200 active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <Download className="h-4 w-4" /> Unduh Laporan Gabungan
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* TABS VIEW SELECTION */}
       <div className="relative group">

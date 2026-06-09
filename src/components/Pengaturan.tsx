@@ -57,8 +57,10 @@ interface UserAccount {
 const ALL_MENU_PAGES = [
   { id: "dashboard", name: "Dashboard Ringkasan", desc: "Akses sisa saldo, grafik SHU & rekap cepat" },
   { id: "jurnal", name: "Jurnal Umum Ledger", desc: "Akses buku harian jurnal akuntansi & pencatatan" },
+  { id: "bukubesar", name: "Buku Besar Detail", desc: "Akses mutasi rincian setiap akun/COA secara spesifik" },
   { id: "stok", name: "Stok Inventaris Toko", desc: "Akses inventaris barang, sisa stok, & pencatatan" },
   { id: "stockopname", name: "Stock Opname Gudang", desc: "Akses audit fisik penyesuaian kuantitas gudang" },
+  { id: "returpembelian", name: "Retur Pengembalian Barang", desc: "Akses pengelolaan retur pembelian & nota kredit" },
   { id: "kontak", name: "Kontak Personel/Supplier", desc: "Akses daftar kelola data mitra & supplier" },
   { id: "anggota", name: "Daftar Anggota & Tagihan", desc: "Akses buku iuran wajib, piutang, dan debitur" },
   { id: "kasbank", name: "Saldo Kas & Bank", desc: "Akses monitoring dompet likuid & rekening koperasi" },
@@ -67,6 +69,7 @@ const ALL_MENU_PAGES = [
   { id: "invoice", name: "Cetak Lembar Tagihan", desc: "Akses form cetak invoice tagihan resmi/struk" },
   { id: "rekappenjualan", name: "Rekap Penjualan Bulanan", desc: "Akses analisis grafik tren omset & item terlaris" },
   { id: "audit", name: "Audit & Validasi Data", desc: "Verifikasi keseimbangan neraca & validitas saldo" },
+  { id: "security_audit", name: "Jejak Audit Keamanan", desc: "Pantau riwayat aktivitas user, login, & log sensitif" },
   { id: "laporan", name: "Laporan SHU Neraca", desc: "Akses kalkulator laba-rugi & penutupan tahunan" },
   { id: "pengaturan", name: "Pengaturan Sistem", desc: "Akses kontrol penuh system, hak akses user, & profil" }
 ];
@@ -248,6 +251,62 @@ export function Pengaturan({
       message: "Cadangan data utama (JSON) berhasil dibuat dan diunduh secara aman ke perangkat Anda!",
       filename
     });
+  };
+
+  // Restore Full JSON database package (Import Backup)
+  const handleRestoreJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const content = evt.target?.result as string;
+        const backupData = JSON.parse(content);
+        
+        // Basic validation
+        if (!backupData.coaData && !backupData.jurnalData && !backupData.stokData) {
+          throw new Error("Berkas backup tidak valid atau format tidak dikenali.");
+        }
+
+        if (window.confirm(`Konfirmasi Pemulihan Sistem:\n\nAnda akan memulihkan data dari berkas "${file.name}" yang dibuat pada ${backupData.exportedAt ? new Date(backupData.exportedAt).toLocaleString('id-ID') : 'waktu tidak diketahui'}.\n\nSEMUA DATA SAAT INI AKAN DIHAPUS DAN DIGANTI. Lanjutkan?`)) {
+          
+          setIsImporting(true);
+
+          // Update Instansi
+          if (backupData.koperasiName && onUpdateKoperasiName) onUpdateKoperasiName(backupData.koperasiName);
+          if (backupData.koperasiAlamat && onUpdateKoperasiAlamat) onUpdateKoperasiAlamat(backupData.koperasiAlamat);
+          if (backupData.koperasiLogo && onUpdateKoperasiLogo) onUpdateKoperasiLogo(backupData.koperasiLogo);
+          if (backupData.koperasiInvoiceSize && onUpdateKoperasiInvoiceSize) onUpdateKoperasiInvoiceSize(backupData.koperasiInvoiceSize);
+          
+          // Update Functional Data
+          if (backupData.coaData && onUpdateCoaData) onUpdateCoaData(backupData.coaData);
+          if (backupData.jurnalData && onUpdateJurnalData) onUpdateJurnalData(backupData.jurnalData);
+          if (backupData.stokData && onUpdateStokData) onUpdateStokData(backupData.stokData);
+          if (backupData.stokHistoriData && onUpdateStokHistoriData) onUpdateStokHistoriData(backupData.stokHistoriData);
+          if (backupData.anggotaData && onUpdateAnggotaData) onUpdateAnggotaData(backupData.anggotaData);
+          if (backupData.kontakLainData && onUpdateKontakLainData) onUpdateKontakLainData(backupData.kontakLainData);
+          if (backupData.tagihanData && onUpdateTagihanData) onUpdateTagihanData(backupData.tagihanData);
+          if (backupData.rekeningData && onUpdateRekeningData) onUpdateRekeningData(backupData.rekeningData);
+          if (backupData.fixedAssets && onUpdateFixedAssets) onUpdateFixedAssets(backupData.fixedAssets);
+          
+          // Update Users (optional, keep security in mind)
+          if (backupData.userAccounts && onUpdateUserAccounts) onUpdateUserAccounts(backupData.userAccounts);
+
+          setBackupToast({
+            show: true,
+            message: "PROSES RESTORE BERHASIL! Seluruh pangkalan data sistem telah dipulihkan ke kondisi cadangan.",
+            filename: file.name
+          });
+        }
+      } catch (err: any) {
+        alert("Gagal memulihkan database: " + err.message);
+      } finally {
+        setIsImporting(false);
+        if (e.target) e.target.value = '';
+      }
+    };
+    reader.readAsText(file);
   };
 
   // Export Individual CSV Data
@@ -556,6 +615,7 @@ export function Pengaturan({
 
   // File input ref for logo
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const restoreFileRef = useRef<HTMLInputElement>(null);
 
   // Logo upload preview / convert to base64
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1657,7 +1717,7 @@ export function Pengaturan({
 
                   <button
                     type="submit"
-                    className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer"
+                    className="w-full py-2 bg-[#1a48f0] hover:bg-blue-700 text-white rounded font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <Plus className="h-3.5 w-3.5" /> Amankan &amp; Registrasi Akun
                   </button>
@@ -1893,6 +1953,39 @@ export function Pengaturan({
               >
                 <Download className="h-4.5 w-4.5" /> Unduh Backup Lengkap (.JSON)
               </button>
+            </div>
+
+            {/* RESTORE JSON CARD */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 overflow-hidden relative">
+              <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+              <div className="space-y-2 max-w-xl">
+                <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-xl w-12 h-12 flex items-center justify-center border border-emerald-500/20">
+                  <RefreshCw className="h-6 w-6" />
+                </div>
+                <h4 className="text-sm font-black text-white uppercase tracking-tight">Pulihkan Sistem Dari Cadangan (.JSON)</h4>
+                <p className="text-xs text-slate-400 leading-normal">
+                  Gunakan fitur ini untuk mengembalikan seluruh pangkalan data koperasi (COA, Jurnal, Stok, Anggota, dll) ke kondisi saat berkas cadangan (.JSON) tersebut dibuat. 
+                  <span className="text-emerald-400 font-bold"> Peringatan: Data saat ini akan sepenuhnya tertimpa oleh data dari berkas cadangan.</span>
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => restoreFileRef.current?.click()}
+                  disabled={isImporting}
+                  className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-800 disabled:text-slate-500 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center gap-2 shadow-lg active:scale-95 shadow-emerald-900/20"
+                >
+                  {isImporting ? <RefreshCw className="h-4.5 w-4.5 animate-spin" /> : <Upload className="h-4.5 w-4.5" />}
+                  Muat &amp; Pulihkan Database (Restore)
+                </button>
+                <input 
+                  type="file" 
+                  ref={restoreFileRef} 
+                  className="hidden" 
+                  accept=".json" 
+                  onChange={handleRestoreJSON} 
+                />
+              </div>
             </div>
 
             {/* SEPARATE PARTS EXPORTS (CSV) SECTION */}

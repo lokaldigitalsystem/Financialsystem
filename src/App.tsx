@@ -3696,7 +3696,7 @@ export default function App() {
   const renderPage = () => {
     // Shared navigation helper
     const handleDashboardNavigation = (page: string, jFilter?: string, cFilter?: string, cSearch?: string) => {
-      setActivePage(page === 'anggota' ? 'kontak' : page);
+      setActivePage(page);
       if (jFilter !== undefined) setJurnalFilter(jFilter);
       if (cFilter !== undefined) setCoaCategoryFilter(cFilter);
       if (cSearch !== undefined) setCoaSearchFilter(cSearch);
@@ -3956,7 +3956,19 @@ export default function App() {
       case "laporan":
         return renderPageWithGuard(
           "laporan",
-          <Laporan coaData={coaData} jurnalData={jurnalData} anggotaData={anggotaData} tagihanData={tagihanData} />,
+          <Laporan 
+            coaData={coaData} 
+            jurnalData={jurnalData} 
+            anggotaData={anggotaData} 
+            tagihanData={tagihanData}
+            rekeningData={rekeningData}
+            salesHistory={salesHistory}
+            stokData={stokData}
+            stokHistoriData={stokHistoriData}
+            kontakLainData={kontakLainData}
+            fixedAssets={fixedAssets}
+            returPembelianData={returPembelianData}
+          />,
           "laporan",
           "Basic",
           "Laporan SHU, Neraca & Cashflow"
@@ -5087,13 +5099,11 @@ export default function App() {
     if (!currentUserDetail) return false;
     if (currentUserDetail.username === "SuperIT") return true; 
 
-    if (pageId === "pengaturan" || pageId === "security_audit" || pageId === "audit") {
+    if (pageId === "pengaturan") {
       return !!currentUserDetail.canAccessSettings;
     }
 
     const allowed = currentUserDetail.permittedPages || [];
-    if (pageId === "bukubesar") return allowed.includes("jurnal");
-    if (pageId === "returpembelian") return allowed.includes("stok");
     return allowed.includes(pageId);
   };
 
@@ -5328,10 +5338,11 @@ export default function App() {
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'jurnal' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
               >
                 <Notebook className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Jurnal Umum</span>}
+                {!isModuleUnlocked('jurnal') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
               </button>
             )}
 
-            {isPagePermitted('jurnal') && (
+            {isPagePermitted('bukubesar') && (
               <button 
                 id="nav-bukubesar"
                 onClick={() => {
@@ -5342,6 +5353,7 @@ export default function App() {
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'bukubesar' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
               >
                 <BookOpen className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Buku Besar Ledger</span>}
+                {!isModuleUnlocked('bukubesar') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
               </button>
             )}
 
@@ -5373,7 +5385,7 @@ export default function App() {
               </button>
             )}
 
-            {isPagePermitted('stok') && (
+            {isPagePermitted('returpembelian') && (
               <button 
                 id="nav-returpembelian"
                 onClick={() => {
@@ -5383,7 +5395,7 @@ export default function App() {
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'returpembelian' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
               >
                 <RotateCcw className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Retur Pembelian</span>}
-                {!isModuleUnlocked('stok') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
+                {!isModuleUnlocked('returpembelian') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
               </button>
             )}
 
@@ -5410,6 +5422,7 @@ export default function App() {
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'anggota' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
               >
                 <UserCheck className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Daftar Anggota</span>}
+                {!isModuleUnlocked('anggota') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
               </button>
             )}
 
@@ -5427,6 +5440,7 @@ export default function App() {
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'kasbank' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                   >
                     <Landmark className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Saldo Kas &amp; Bank</span>}
+                    {!isModuleUnlocked('kasbank') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
                   </button>
                 )}
 
@@ -5442,6 +5456,7 @@ export default function App() {
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'coa' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                   >
                     <ListTodo className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Chart of Accounts (COA)</span>}
+                    {!isModuleUnlocked('coa') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
                   </button>
                 )}
 
@@ -5455,6 +5470,7 @@ export default function App() {
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'audit' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                   >
                     <Scale className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Audit Validasi Data</span>}
+                    {!isModuleUnlocked('audit') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
                   </button>
                 )}
 
@@ -5498,7 +5514,7 @@ export default function App() {
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'rekappenjualan' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                   >
                     <TrendingUp className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Rekap Penjualan Bulanan</span>}
-                    {!isModuleUnlocked('stok') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
+                    {!isModuleUnlocked('rekappenjualan') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
                   </button>
                 )}
 
@@ -5527,16 +5543,19 @@ export default function App() {
                 >
                   <Settings className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Pengaturan Sistem</span>}
                 </button>
-                <button 
-                  id="nav-security-audit"
-                  onClick={() => setActivePage('security_audit')}
-                  title={isSidebarCollapsed ? "Security Audit" : ""}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-all mt-1 hover:text-white hover:bg-slate-800 ${activePage === 'security_audit' ? 'bg-red-600 text-white' : 'text-slate-400'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
-                >
-                  <ShieldAlert className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Jejak Audit Keamanan</span>}
-                  {!isModuleUnlocked('security_audit') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
-                </button>
               </>
+            )}
+
+            {isPagePermitted('security_audit') && (
+              <button 
+                id="nav-security-audit"
+                onClick={() => setActivePage('security_audit')}
+                title={isSidebarCollapsed ? "Security Audit" : ""}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-all mt-1 hover:text-white hover:bg-slate-800 ${activePage === 'security_audit' ? 'bg-red-600 text-white' : 'text-slate-400'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
+              >
+                <ShieldAlert className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Jejak Audit Keamanan</span>}
+                {!isModuleUnlocked('security_audit') && <Lock className={`h-3 w-3 ml-auto text-amber-500 shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`} />}
+              </button>
             )}
 
             {!isSidebarCollapsed && <div className="px-3 pt-2 pb-1 text-[10px] font-extrabold text-slate-500 tracking-wider uppercase">Bantuan</div>}

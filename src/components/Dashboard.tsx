@@ -833,7 +833,7 @@ export function Dashboard(props: DashboardProps) {
           <button 
             id="nav-to-jurnal"
             onClick={() => props.onNavigate('jurnal')}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-lg shadow-sm flex items-center gap-2 transition cursor-pointer active:scale-95"
+            className="px-4 py-2 bg-[#1a48f0] hover:bg-blue-700 text-white font-semibold text-xs rounded-lg shadow-sm flex items-center gap-2 transition cursor-pointer active:scale-95"
           >
             <Wallet className="h-4 w-4" /> Mulai Jurnal Baru
           </button>
@@ -886,7 +886,7 @@ export function Dashboard(props: DashboardProps) {
         {/* PIUTANG AKTIF KPI */}
         <motion.div 
           variants={itemVariants}
-          onClick={() => props.onNavigate('operasional')}
+          onClick={() => props.onNavigate('invoice')}
           className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 relative overflow-hidden group cursor-pointer hover:border-amber-200 transition-all"
         >
           <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
@@ -996,7 +996,7 @@ export function Dashboard(props: DashboardProps) {
           onClick={() => setActiveSubTab('operasional')}
           className={`flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap flex-1 active:scale-95 ${
             activeSubTab === 'operasional'
-              ? 'bg-red-600 text-white shadow-xs'
+              ? 'bg-red-600 text-[#000000] shadow-xs'
               : 'text-gray-500 hover:text-gray-700 hover:bg-slate-100'
           }`}
         >
