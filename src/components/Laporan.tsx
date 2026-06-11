@@ -34,9 +34,11 @@ import {
   Notebook,
   Boxes,
   Briefcase,
-  RotateCcw
+  RotateCcw,
+  Printer
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
 import { CoaAccount, CoaKategori, SaldoNormal, JurnalEntry, Anggota, Tagihan, RekeningBank, PastSale, StokItem, StokHistoriEntry, KontakLain, FixedAsset, PurchaseReturn } from '../types';
 import { 
   ResponsiveContainer, 
@@ -61,6 +63,7 @@ interface LaporanProps {
   kontakLainData?: KontakLain[];
   fixedAssets?: FixedAsset[];
   returPembelianData?: PurchaseReturn[];
+  koperasiName?: string;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -97,6 +100,13 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export function Laporan(props: LaporanProps) {
   const { coaData, jurnalData, anggotaData = [], tagihanData = [] } = props;
+  
+  const rawKoperasiId = localStorage.getItem('kdmp_koperasiId');
+  const fallbackKoperasiName = rawKoperasiId 
+    ? (localStorage.getItem(`kdmp_${rawKoperasiId}_koperasiName`) || "KOPERASI KARYAWAN SEJAHTERA")
+    : (localStorage.getItem('kdmp_koperasiName') || "KOPERASI KARYAWAN SEJAHTERA");
+  const currentOrgName = props.koperasiName || fallbackKoperasiName;
+
   const [activeTab, setActiveTab] = useState<'lr' | 'nrc' | 'ak' | 'shu_dist' | 'ratio' | 'rekap_simpanan' | 'rekap_pinjaman'>('lr');
   const [selectedMonth, setSelectedMonth] = useState<number | 'tahunan'>('tahunan');
 
@@ -155,6 +165,8 @@ export function Laporan(props: LaporanProps) {
 
   // --- BUNDLE EXPORT SELECTION STATE ---
   const [showBundleModal, setShowBundleModal] = useState(false);
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [isPrintingPdf, setIsPrintingPdf] = useState(false);
   const [selectedSheets, setSelectedSheets] = useState<Record<string, boolean>>({
     coa: true,
     jurnal_umum: true,
@@ -1180,6 +1192,417 @@ export function Laporan(props: LaporanProps) {
     setShowBundleModal(false);
   };
 
+  const exportBundlePdfViaJsPDF = () => {
+    const doc = new jsPDF('p', 'pt', 'a4');
+    let pageCount = 1;
+    const curPeriod = selectedMonth === 'tahunan' ? 'Tahunan 2026' : `${monthNames[selectedMonth as any]} 2026`;
+
+    const addPageDecoration = (title: string) => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.setTextColor(30, 41, 59);
+      doc.text(currentOrgName.toUpperCase(), 40, 40);
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Laporan Konsolidasi - Periode: ${curPeriod}`, 40, 52);
+      
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(1);
+      doc.line(40, 60, 555, 60);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(220, 38, 38);
+      doc.text(title.toUpperCase(), 40, 78);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Halaman ${pageCount}`, 520, 820);
+      doc.text(`Sistem Keuangan ${currentOrgName} - Diunduh Otomatis`, 40, 820);
+    };
+
+    let isFirstPage = true;
+
+    const drawTable = (headers: string[], rows: any[][], colWidths: number[], startY: number) => {
+      let currentY = startY;
+
+      doc.setFillColor(248, 250, 252);
+      doc.rect(40, currentY, 515, 20, 'F');
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(51, 65, 85);
+
+      let currentX = 40;
+      headers.forEach((h, i) => {
+        doc.text(h, currentX + 5, currentY + 13);
+        currentX += colWidths[i];
+      });
+
+      currentY += 20;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+
+      rows.forEach((row, rowIndex) => {
+        if (currentY > 770) {
+          doc.addPage();
+          pageCount++;
+          addPageDecoration("Kelanjutan - " + headers[0]);
+          currentY = 100;
+          
+          doc.setFillColor(248, 250, 252);
+          doc.rect(40, currentY, 515, 20, 'F');
+          doc.setFont("helvetica", "bold");
+          let cx = 40;
+          headers.forEach((h, i) => {
+            doc.text(h, cx + 5, currentY + 13);
+            cx += colWidths[i];
+          });
+          currentY += 20;
+          doc.setFont("helvetica", "normal");
+        }
+
+        if (rowIndex % 2 === 1) {
+          doc.setFillColor(252, 253, 253);
+          doc.rect(40, currentY, 515, 16, 'F');
+        }
+
+        let cx = 40;
+        row.forEach((val, colIndex) => {
+          const textVal = val !== undefined && val !== null ? String(val) : "";
+          doc.text(textVal, cx + 5, currentY + 11);
+          cx += colWidths[colIndex];
+        });
+
+        doc.setDrawColor(241, 245, 249);
+        doc.setLineWidth(0.5);
+        doc.line(40, currentY + 16, 555, currentY + 16);
+
+        currentY += 16;
+      });
+
+      return currentY;
+    };
+
+    if (selectedSheets.coa) {
+      if (!isFirstPage) { doc.addPage(); pageCount++; } else { isFirstPage = false; }
+      addPageDecoration("Bagan Akun (Chart of Accounts)");
+      const headers = ["KODE", "NAMA AKUN", "KATEGORI AKUN", "SALDO NORMAL", "SALDO AKHIR"];
+      const colWidths = [60, 160, 110, 90, 95];
+      const rows = coaData.map(c => [
+        c.kode,
+        c.nama,
+        c.kategori,
+        c.normal,
+        `Rp ${c.saldo.toLocaleString('id-ID')}`
+      ]);
+      drawTable(headers, rows, colWidths, 100);
+    }
+
+    if (selectedSheets.jurnal_umum) {
+      if (!isFirstPage) { doc.addPage(); pageCount++; } else { isFirstPage = false; }
+      addPageDecoration("Arsip Kronologis Jurnal Umum");
+      const headers = ["TANGGAL", "NO BUKTI", "KODE", "KETERANGAN", "DEBET", "KREDIT"];
+      const colWidths = [60, 80, 50, 165, 80, 80];
+      const rows = [...jurnalData]
+        .sort((a, b) => a.tgl.localeCompare(b.tgl))
+        .map(j => [
+          j.tgl,
+          j.no,
+          j.akun,
+          j.ket,
+          j.debet > 0 ? `Rp ${j.debet.toLocaleString('id-ID')}` : "-",
+          j.kredit > 0 ? `Rp ${j.kredit.toLocaleString('id-ID')}` : "-"
+        ]);
+      drawTable(headers, rows, colWidths, 100);
+    }
+
+    if (selectedSheets.buku_besar) {
+      if (!isFirstPage) { doc.addPage(); pageCount++; } else { isFirstPage = false; }
+      addPageDecoration("Mutasi Buku Besar per Akun (Ledger)");
+      
+      const uniqAccounts = [...new Set(jurnalData.map(j => j.akun))].sort();
+      let currentY = 100;
+
+      uniqAccounts.forEach((accCode) => {
+        const accInfo = coaData.find(c => c.kode === accCode);
+        const entries = jurnalData
+          .filter(j => j.akun === accCode)
+          .sort((a, b) => a.tgl.localeCompare(b.tgl));
+
+        if (currentY > 720) {
+          doc.addPage();
+          pageCount++;
+          addPageDecoration("Mutasi Buku Besar per Akun (Ledger)");
+          currentY = 100;
+        }
+
+        doc.setFillColor(241, 245, 249);
+        doc.rect(40, currentY, 515, 18, 'F');
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5);
+        doc.setTextColor(30, 41, 59);
+        doc.text(`AKUN: ${accCode} - ${accInfo?.nama || ''}`, 46, currentY + 12);
+        currentY += 22;
+
+        const headers = ["TANGGAL", "NO BUKTI", "KETERANGAN", "DEBET", "KREDIT"];
+        const colWidths = [70, 90, 195, 80, 80];
+        const rows = entries.map(e => [
+          e.tgl,
+          e.no,
+          e.ket,
+          e.debet > 0 ? `Rp ${e.debet.toLocaleString('id-ID')}` : "-",
+          e.kredit > 0 ? `Rp ${e.kredit.toLocaleString('id-ID')}` : "-"
+        ]);
+
+        currentY = drawTable(headers, rows, colWidths, currentY);
+        currentY += 15;
+      });
+    }
+
+    if (selectedSheets.shu) {
+      if (!isFirstPage) { doc.addPage(); pageCount++; } else { isFirstPage = false; }
+      addPageDecoration("Laporan Perhitungan Sisa Hasil Usaha (SHU)");
+      
+      let currentY = 100;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(30, 41, 59);
+
+      doc.text("A. PENDAPATAN OPERASIONAL", 40, currentY);
+      currentY += 15;
+      
+      const rowsRev = incomeAccounts.map(a => [a.nama, `Rp ${a.amount.toLocaleString('id-ID')}`]);
+      rowsRev.push(["TOTAL PENDAPATAN", `Rp ${selectedTotalPendapatan.toLocaleString('id-ID')}`]);
+      currentY = drawTable(["Uraian Akun Pendapatan", "Jumlah (Rp)"], rowsRev, [350, 165], currentY) + 15;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text("B. HARGA POKOK PENJUALAN (HPP)", 40, currentY);
+      currentY += 15;
+
+      const rowsHpp = hppAccounts.map(a => [a.nama, `Rp ${a.amount.toLocaleString('id-ID')}`]);
+      rowsHpp.push(["TOTAL HARGA POKOK PENJUALAN", `Rp ${selectedTotalHpp.toLocaleString('id-ID')}`]);
+      currentY = drawTable(["Uraian HPP", "Jumlah (Rp)"], rowsHpp, [350, 165], currentY) + 10;
+
+      doc.setFillColor(240, 253, 244);
+      doc.rect(40, currentY, 515, 20, 'F');
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(21, 128, 61);
+      doc.text("LABA KOTOR (GROSS PROFIT)", 46, currentY + 13);
+      doc.text(`Rp ${selectedLabaKotor.toLocaleString('id-ID')}`, 450, currentY + 13);
+      currentY += 30;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(30, 41, 59);
+      doc.text("C. BEBAN OPERASIONAL & UMUM", 40, currentY);
+      currentY += 15;
+
+      const rowsOpp = operationalAccounts.map(a => [a.nama, `Rp ${a.amount.toLocaleString('id-ID')}`]);
+      rowsOpp.push(["TOTAL BEBAN OPERASIONAL", `Rp ${selectedTotalOperational.toLocaleString('id-ID')}`]);
+      currentY = drawTable(["Uraian Beban Operasional", "Jumlah (Rp)"], rowsOpp, [350, 165], currentY) + 30;
+
+      doc.setFillColor(254, 242, 242);
+      doc.rect(40, currentY, 515, 24, 'F');
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(220, 38, 38);
+      doc.text("SISA HASIL USAHA BERSIH (NET SHU)", 46, currentY + 15);
+      doc.text(`Rp ${selectedShuBersih.toLocaleString('id-ID')}`, 450, currentY + 15);
+    }
+
+    if (selectedSheets.neraca) {
+      if (!isFirstPage) { doc.addPage(); pageCount++; } else { isFirstPage = false; }
+      addPageDecoration("Laporan Neraca Posisi Keuangan");
+
+      let currentY = 100;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(30, 41, 59);
+
+      const leftSide = assetsList.map(a => [a.nama, `Rp ${a.balance.toLocaleString('id-ID')}`]);
+      const rightSide = [
+        ...liabilitiesLancarList.map(l => [l.nama, `Rp ${l.balance.toLocaleString('id-ID')}`]),
+        ...liabilitiesPanjangList.map(l => [l.nama, `Rp ${l.balance.toLocaleString('id-ID')}`]),
+        ...equityList.map(e => [e.nama, `Rp ${e.balance.toLocaleString('id-ID')}`]),
+        ["SHU Tahun Berjalan", `Rp ${selectedNeracaShu.toLocaleString('id-ID')}`]
+      ];
+
+      const maxLen = Math.max(leftSide.length, rightSide.length);
+      const combinedRows: any[][] = [];
+      for (let i = 0; i < maxLen; i++) {
+        combinedRows.push([
+          leftSide[i]?.[0] || "",
+          leftSide[i]?.[1] || "",
+          rightSide[i]?.[0] || "",
+          rightSide[i]?.[1] || ""
+        ]);
+      }
+
+      currentY = drawTable(
+        ["AKTIVA (ASET)", "SALDO AKTIVA", "PASIVA (KEWAJIBAN & MODAL)", "SALDO PASIVA"], 
+        combinedRows, 
+        [150, 100, 165, 100], 
+        currentY
+      ) + 15;
+
+      doc.setFillColor(248, 250, 252);
+      doc.rect(40, currentY, 515, 20, 'F');
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text("TOTAL AKTIVA", 46, currentY + 13);
+      doc.text(`Rp ${totalAktiva.toLocaleString('id-ID')}`, 190, currentY + 13);
+      doc.text("TOTAL PASIVA", 295, currentY + 13);
+      doc.text(`Rp ${totalPasiva.toLocaleString('id-ID')}`, 456, currentY + 13);
+    }
+
+    if (selectedSheets.arus_kas) {
+      if (!isFirstPage) { doc.addPage(); pageCount++; } else { isFirstPage = false; }
+      addPageDecoration("Laporan Arus Kas Lembaga");
+
+      const rows = [
+        ["A. ARUS KAS DARI AKTIVITAS OPERASIONAL", `Rp ${cashFlow.totalOp.toLocaleString('id-ID')}`],
+        ["   - Penerimaan dari Pendapatan", `Rp ${cashFlow.opIn_Revenue.toLocaleString('id-ID')}`],
+        ["   - Pembayaran Beban/Biaya", `Rp ${(-cashFlow.opOut_Expense).toLocaleString('id-ID')}`],
+        ["   - Perubahan Aktiva/Pasiva Lancar", `Rp ${cashFlow.op_WorkingCapital.toLocaleString('id-ID')}`],
+        ["", ""],
+        ["B. ARUS KAS DARI AKTIVITAS INVESTASI", `Rp ${cashFlow.totalInv.toLocaleString('id-ID')}`],
+        ["   - Penjualan Aset / Investasi Masuk", `Rp ${cashFlow.invIn.toLocaleString('id-ID')}`],
+        ["   - Pembelian Aset / Investasi Keluar", `Rp ${(-cashFlow.invOut).toLocaleString('id-ID')}`],
+        ["", ""],
+        ["C. ARUS KAS DARI AKTIVITAS PENDANAAN", `Rp ${cashFlow.totalFin.toLocaleString('id-ID')}`],
+        ["   - Penerimaan Modal/Pinjaman", `Rp ${cashFlow.finIn.toLocaleString('id-ID')}`],
+        ["   - Pembayaran Modal/Pinjaman", `Rp ${(-cashFlow.finOut).toLocaleString('id-ID')}`],
+        ["", ""],
+        ["SALDO AWAL KAS", `Rp ${cashFlow.saldoAwal.toLocaleString('id-ID')}`],
+        ["KENAIKAN/PENURUNAN BERSIH KAS", `Rp ${cashFlow.netChange.toLocaleString('id-ID')}`],
+        ["SALDO AKHIR KAS (AKTUAL)", `Rp ${cashFlow.saldoAkhir.toLocaleString('id-ID')}`]
+      ];
+
+      drawTable(["Deskripsi Arus Kas Lembaga", "Jumlah Rupiah"], rows, [350, 165], 100);
+    }
+
+    if (selectedSheets.pembagian_shu) {
+      if (!isFirstPage) { doc.addPage(); pageCount++; } else { isFirstPage = false; }
+      addPageDecoration("Simulasi & Pembagian SHU Forum RAT");
+
+      let currentY = 100;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text(`SHU Bersih yang Dialokasikan: Rp ${activeShuNominal.toLocaleString('id-ID')}`, 40, currentY);
+      currentY += 15;
+
+      const rasioRows = [
+        ["Cadangan Koperasi", `${percentCadangan}%`, `Rp ${nominalCadangan.toLocaleString('id-ID')}`],
+        ["Jasa Modal (Simpanan)", `${percentJasaModal}%`, `Rp ${nominalJasaModal.toLocaleString('id-ID')}`],
+        ["Jasa Anggota (Transaksi)", `${percentJasaUsaha}%`, `Rp ${nominalJasaUsaha.toLocaleString('id-ID')}`],
+        ["Dana Pengurus", `${percentPengurus}%`, `Rp ${nominalPengurus.toLocaleString('id-ID')}`],
+        ["Dana Sosial", `${percentSosial}%`, `Rp ${nominalSosial.toLocaleString('id-ID')}`],
+        ["Dana Pendidikan", `${percentPendidikan}%`, `Rp ${nominalPendidikan.toLocaleString('id-ID')}`],
+        ["Dana PEADES", `${percentPeades}%`, `Rp ${nominalPeades.toLocaleString('id-ID')}`]
+      ];
+
+      currentY = drawTable(["Uraian Rasio Alokasi RAT", "Persentase", "Nominal Alokasi"], rasioRows, [180, 150, 185], currentY) + 20;
+
+      doc.setFont("helvetica", "bold");
+      doc.text("Porsi Pembagian SHU Per-Anggota:", 40, currentY);
+      currentY += 12;
+
+      const headers = ["ID", "NAMA ANGGOTA", "SIMPANAN", "BELANJA", "J. MODAL", "J. ANGGOTA", "TOTAL SHU"];
+      const colWidths = [40, 110, 80, 80, 65, 65, 75];
+      const rows = ratSimulationList.map(r => [
+        r.id,
+        r.nama,
+        `Rp ${r.simpanan.toLocaleString('id-ID')}`,
+        `Rp ${r.transaksiPaid.toLocaleString('id-ID')}`,
+        `Rp ${Math.round(r.shuJasaModal).toLocaleString('id-ID')}`,
+        `Rp ${Math.round(r.shuJasaUsaha).toLocaleString('id-ID')}`,
+        `Rp ${Math.round(r.totalShuReceived).toLocaleString('id-ID')}`
+      ]);
+
+      drawTable(headers, rows, colWidths, currentY);
+    }
+
+    if (selectedSheets.rekap_simpanan) {
+      if (!isFirstPage) { doc.addPage(); pageCount++; } else { isFirstPage = false; }
+      addPageDecoration("Rekap Saldo Simpanan Anggota");
+
+      const headers = ["ID", "NAMA ANGGOTA", "SIMPANAN POKOK", "SIMPANAN WAJIB", "SIMPANAN SUKARELA", "TOTAL SALDO"];
+      const colWidths = [45, 120, 85, 85, 85, 95];
+      const rows = (anggotaData || []).map(m => {
+        const rc = memberRecapData[m.id] || { pokok: 0, wajib: 0, sukarela: 0 };
+        return [
+          m.id,
+          m.nama,
+          `Rp ${rc.pokok.toLocaleString('id-ID')}`,
+          `Rp ${rc.wajib.toLocaleString('id-ID')}`,
+          `Rp ${rc.sukarela.toLocaleString('id-ID')}`,
+          `Rp ${(rc.pokok + rc.wajib + rc.sukarela).toLocaleString('id-ID')}`
+        ];
+      });
+
+      drawTable(headers, rows, colWidths, 100);
+    }
+
+    if (selectedSheets.rekap_pinjaman) {
+      if (!isFirstPage) { doc.addPage(); pageCount++; } else { isFirstPage = false; }
+      addPageDecoration("Rekap Saldo Pinjaman Anggota");
+
+      const headers = ["ID", "NAMA ANGGOTA", "SALDO PINJAMAN AKTIF", "STATUS PINJAMAN"];
+      const colWidths = [50, 180, 160, 125];
+      const rows = (anggotaData || []).map(m => {
+        const rc = memberRecapData[m.id] || { pinjaman: 0 };
+        return [
+          m.id,
+          m.nama,
+          `Rp ${rc.pinjaman.toLocaleString('id-ID')}`,
+          rc.pinjaman > 0 ? "AKTIF / BELUM LUNAS" : "LUNAS / NIHIL"
+        ];
+      });
+
+      drawTable(headers, rows, colWidths, 100);
+    }
+
+    if (selectedSheets.stok) {
+      if (!isFirstPage) { doc.addPage(); pageCount++; } else { isFirstPage = false; }
+      addPageDecoration("Daftar Inventaris Stok & Logistik Gudang");
+
+      const headers = ["ID", "KODE", "NAMA BARANG", "HARGA JUAL", "STOK TERSEDIA", "ESTIMASI NILAI JUAL"];
+      const colWidths = [40, 80, 160, 80, 70, 85];
+      const rows = (props.stokData || []).map(s => [
+        s.id,
+        s.kode,
+        s.nama,
+        `Rp ${s.hargaJual.toLocaleString('id-ID')}`,
+        s.qty,
+        `Rp ${(s.hargaJual * s.qty).toLocaleString('id-ID')}`
+      ]);
+
+      drawTable(headers, rows, colWidths, 100);
+    }
+
+    doc.save(`LAPORAN_KONSOLIDASI_${curPeriod.replace(/\s+/g, '_')}.pdf`);
+    setShowPdfModal(false);
+  };
+
+  const printBundlePdf = () => {
+    setShowPdfModal(false);
+    setIsPrintingPdf(true);
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        setIsPrintingPdf(false);
+      }, 1000);
+    }, 450);
+  };
+
   return (
     <div>
       <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-4 mb-6 border-red-100 gap-4">
@@ -1234,6 +1657,15 @@ export function Laporan(props: LaporanProps) {
             title="Download consolidated Excel report with selectable data sheets"
           >
             <FileSpreadsheet className="h-3.5 w-3.5" /> Bundle Report (.xlsx)
+          </button>
+
+          <button
+            id="export-bundle-pdf-btn"
+            onClick={() => setShowPdfModal(true)}
+            className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg shadow-sm transition active:scale-95 cursor-pointer flex items-center gap-1.5"
+            title="Download, print or export selected sheets as PDF report bundle"
+          >
+            <FileText className="h-3.5 w-3.5" /> Bundle Report (.pdf)
           </button>
         </div>
       </div>
@@ -1345,6 +1777,124 @@ export function Laporan(props: LaporanProps) {
                   className="flex-[2] py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition shadow-lg shadow-indigo-200 active:scale-95 flex items-center justify-center gap-2"
                 >
                   <Download className="h-4 w-4" /> Unduh Laporan Gabungan
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- BUNDLE EXPORT PDF MODAL --- */}
+      <AnimatePresence>
+        {showPdfModal && (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPdfModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg border border-slate-200 relative overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-rose-600 text-white rounded-2xl shadow-lg shadow-rose-200">
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-800 uppercase tracking-tight text-sm">Konsolidasi PDF (Cetak/PDF)</h3>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Ekspor gabungan pelaporan akuntansi</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowPdfModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition text-slate-400 hover:text-slate-600">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="p-6 max-h-[60vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Daftar Laporan Terpilih</span>
+                  <div className="flex items-center gap-4">
+                    <button onClick={() => selectAllSheets(true)} className="text-[10px] font-black text-rose-600 uppercase hover:underline">Pilih Semua</button>
+                    <button onClick={() => selectAllSheets(false)} className="text-[10px] font-black text-slate-400 uppercase hover:underline">Kosongkan</button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { key: 'coa', label: 'Bagan Akun (COA)', icon: ListTodo },
+                    { key: 'jurnal_umum', label: 'Jurnal Umum', icon: Notebook },
+                    { key: 'buku_besar', label: 'Buku Besar', icon: Notebook },
+                    { key: 'anggota', label: 'Database Anggota', icon: Users },
+                    { key: 'kasbank', label: 'Saldo Kas & Bank', icon: Landmark },
+                    { key: 'penjualan', label: 'Rekap Penjualan', icon: TrendingUp },
+                    { key: 'shu', label: 'Laporan Laba Rugi', icon: Percent },
+                    { key: 'neraca', label: 'Laporan Neraca', icon: Scale },
+                    { key: 'arus_kas', label: 'Arus Kas Lembaga', icon: Coins },
+                    { key: 'pembagian_shu', label: 'Pembagian SHU', icon: Percent },
+                    { key: 'rekap_simpanan', label: 'Rekap Simpanan', icon: PiggyBank },
+                    { key: 'rekap_pinjaman', label: 'Rekap Pinjaman', icon: Wallet },
+                    { key: 'stok', label: 'Stok & Logistik', icon: Boxes },
+                  ].map((item) => (
+                    <button
+                      key={item.key}
+                      onClick={() => toggleSheet(item.key)}
+                      className={`flex items-center gap-3 p-3 rounded-2xl border transition-all text-left ${
+                        selectedSheets[item.key] 
+                          ? 'bg-rose-50 border-rose-200 text-rose-900 shadow-sm' 
+                          : 'bg-white border-slate-100 text-slate-400 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className={`p-1.5 rounded-lg ${selectedSheets[item.key] ? 'bg-rose-650 text-white bg-rose-600' : 'bg-slate-100 text-slate-400'}`}>
+                        <item.icon className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-[10.5px] font-black leading-none uppercase truncate">{item.label}</p>
+                        <p className="text-[9px] font-bold opacity-60 mt-0.5 leading-none">{selectedSheets[item.key] ? 'Termasuk' : 'Dikecualikan'}</p>
+                      </div>
+                      {selectedSheets[item.key] && (
+                        <div className="bg-rose-600 text-white rounded-full p-0.5">
+                          <Check className="h-2.5 w-2.5" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-6 p-4 bg-red-50 rounded-2xl border border-red-100 flex items-start gap-3">
+                  <Printer className="h-4.5 w-4.5 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-[10.5px] font-black text-rose-800 uppercase leading-normal">Opsi Output PDF Ganda</h4>
+                    <p className="text-[9.5px] text-rose-700 font-medium leading-relaxed mt-0.5">
+                      Pilih <span className="underline font-black">Cetak Paged Media</span> untuk tata letak grafis sempurna via browser, atau <span className="underline font-black">Unduh PDF</span> untuk konversi tabel cepat.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
+                <button 
+                  onClick={() => setShowPdfModal(false)}
+                  className="flex-1 py-3 bg-white hover:bg-slate-50 text-slate-500 text-[10px] font-black uppercase tracking-widest rounded-xl transition border border-slate-200"
+                >
+                  Batal
+                </button>
+                <button 
+                  onClick={printBundlePdf}
+                  className="flex-[1.5] py-3 bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition shadow-lg shadow-amber-200 active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <Printer className="h-4 w-4" /> Cetak Paged Media
+                </button>
+                <button 
+                  onClick={exportBundlePdfViaJsPDF}
+                  className="flex-[1.5] py-3 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition shadow-lg shadow-rose-200 active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <Download className="h-4 w-4" /> Unduh PDF (jsPDF)
                 </button>
               </div>
             </motion.div>
@@ -2505,6 +3055,501 @@ export function Laporan(props: LaporanProps) {
               </tfoot>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* --- PRINT-ONLY HIGH-FIDELITY CONTAINER --- */}
+      {isPrintingPdf && (
+        <div id="print-only-container" className="hidden print:block font-sans text-black bg-white p-8 space-y-12 leading-normal">
+          <div className="text-center pb-6 border-b-2 border-slate-900 mb-8">
+            <h1 className="text-2xl font-black uppercase tracking-tight">Laporan Konsolidasi Tahunan Akuntansi</h1>
+            <h2 className="text-sm font-semibold uppercase text-slate-500 tracking-widest mt-1">{currentOrgName}</h2>
+            <p className="text-xs font-bold text-slate-400 mt-2 italic">Periode: {selectedMonth === 'tahunan' ? 'Tahunan 2026' : `${monthNames[selectedMonth as any]} 2026`}</p>
+          </div>
+
+          {/* 1. BAGAN AKUN */}
+          {selectedSheets.coa && (
+            <div className="print-page space-y-4">
+              <h3 className="text-sm font-black uppercase border-b pb-2 text-slate-900">1. Bagan Akun (Chart of Accounts)</h3>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-100 font-bold border-b text-left">
+                    <th className="p-2">Kode</th>
+                    <th className="p-2">Nama Akun</th>
+                    <th className="p-2">Kategori</th>
+                    <th className="p-2">Normal</th>
+                    <th className="p-2 text-right">Saldo Akhir (Rp)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {coaData.map(c => (
+                    <tr key={c.kode} className="border-b">
+                      <td className="p-2 font-mono font-bold text-[10px]">{c.kode}</td>
+                      <td className="p-2 font-semibold text-[10px]">{c.nama}</td>
+                      <td className="p-2 uppercase text-[9px]">{c.kategori}</td>
+                      <td className="p-2 text-[10px]">{c.normal}</td>
+                      <td className="p-2 text-right font-mono font-bold text-[10px]">
+                        {c.saldo.toLocaleString('id-ID')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 2. JURNAL UMUM */}
+          {selectedSheets.jurnal_umum && (
+            <div className="print-page space-y-4">
+              <h3 className="text-sm font-black uppercase border-b pb-2 text-slate-900">2. Jurnal Umum Kronologis</h3>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-100 font-bold border-b text-left">
+                    <th className="p-2">Tanggal</th>
+                    <th className="p-2">No Bukti</th>
+                    <th className="p-2">Akun</th>
+                    <th className="p-2">Keterangan</th>
+                    <th className="p-2 text-right">Debit (Rp)</th>
+                    <th className="p-2 text-right">Kredit (Rp)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...jurnalData]
+                    .sort((a, b) => a.tgl.localeCompare(b.tgl))
+                    .map((j, idx) => (
+                      <tr key={idx} className="border-b">
+                        <td className="p-2 text-[10px]">{j.tgl}</td>
+                        <td className="p-2 font-semibold text-[10px]">{j.no}</td>
+                        <td className="p-2 font-mono text-[10px]">{j.akun}</td>
+                        <td className="p-2 text-slate-700 text-[10px]">{j.ket}</td>
+                        <td className="p-2 text-right font-mono text-emerald-700 text-[10px]">
+                          {j.debet > 0 ? j.debet.toLocaleString('id-ID') : '-'}
+                        </td>
+                        <td className="p-2 text-right font-mono text-rose-700 text-[10px]">
+                          {j.kredit > 0 ? j.kredit.toLocaleString('id-ID') : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 3. BUKU BESAR */}
+          {selectedSheets.buku_besar && (
+            <div className="print-page space-y-6">
+              <h3 className="text-sm font-black uppercase border-b pb-2 text-slate-900">3. Buku Besar Mutasi (Ledger)</h3>
+              {[...new Set(jurnalData.map(j => j.akun))].sort().map((accCode, idx) => {
+                const accInfo = coaData.find(c => c.kode === accCode);
+                const entries = jurnalData
+                  .filter(j => j.akun === accCode)
+                  .sort((a, b) => a.tgl.localeCompare(b.tgl));
+                return (
+                  <div key={idx} className="space-y-2">
+                    <h4 className="text-[10px] font-black uppercase tracking-wider text-indigo-900 bg-indigo-50 p-2 rounded">
+                      AKUN: {accCode} ({accInfo?.nama})
+                    </h4>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 text-[9px] font-bold border-b text-left">
+                          <th className="p-2">Tanggal</th>
+                          <th className="p-2">No Bukti</th>
+                          <th className="p-2">Keterangan</th>
+                          <th className="p-2 text-right">Debit (Rp)</th>
+                          <th className="p-2 text-right">Kredit (Rp)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {entries.map((e, eIdx) => (
+                          <tr key={eIdx} className="border-b">
+                            <td className="p-2 text-[9px]">{e.tgl}</td>
+                            <td className="p-2 text-[9px]">{e.no}</td>
+                            <td className="p-2 text-slate-600 text-[9px]">{e.ket}</td>
+                            <td className="p-2 text-right font-mono text-[9px]">
+                              {e.debet > 0 ? e.debet.toLocaleString('id-ID') : '-'}
+                            </td>
+                            <td className="p-2 text-right font-mono text-[9px]">
+                              {e.kredit > 0 ? e.kredit.toLocaleString('id-ID') : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* 4. LABA RUGI */}
+          {selectedSheets.shu && (
+            <div className="print-page space-y-6">
+              <h3 className="text-sm font-black uppercase border-b pb-2 text-slate-900">4. Perhitungan Sisa Hasil Usaha (Laba Rugi)</h3>
+              
+              <div className="space-y-4">
+                {/* Revenue */}
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-black uppercase text-slate-800">A. PENDAPATAN OPERASIONAL</h4>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b text-left font-bold">
+                        <th className="p-2">Uraian Akun Pendapatan</th>
+                        <th className="p-2 text-right">Jumlah (Rp)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {incomeAccounts.map(a => (
+                        <tr key={a.kode} className="border-b">
+                          <td className="p-2 text-[10px]">{a.nama}</td>
+                          <td className="p-2 text-right font-mono text-[10px]">{a.amount.toLocaleString('id-ID')}</td>
+                        </tr>
+                      ))}
+                      <tr className="font-bold bg-slate-100">
+                        <td className="p-2 uppercase text-[9px]">TOTAL PENDAPATAN</td>
+                        <td className="p-2 text-right font-mono text-indigo-900 text-[10px]">
+                          {selectedTotalPendapatan.toLocaleString('id-ID')}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* HPP */}
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-black uppercase text-slate-800">B. HARGA POKOK PENJUALAN (HPP)</h4>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b text-left font-bold">
+                        <th className="p-2">Uraian Akun HPP</th>
+                        <th className="p-2 text-right">Jumlah (Rp)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hppAccounts.map(a => (
+                        <tr key={a.kode} className="border-b">
+                          <td className="p-2 text-[10px]">{a.nama}</td>
+                          <td className="p-2 text-right font-mono text-[10px]">{a.amount.toLocaleString('id-ID')}</td>
+                        </tr>
+                      ))}
+                      <tr className="font-bold bg-slate-100">
+                        <td className="p-2 uppercase text-[9px]">TOTAL HARGA POKOK PENJUALAN</td>
+                        <td className="p-2 text-right font-mono text-indigo-900 text-[10px]">
+                          {selectedTotalHpp.toLocaleString('id-ID')}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Gross Profit */}
+                <div className="flex justify-between items-center p-3 bg-green-50 border border-green-200 rounded font-bold text-xs text-green-800">
+                  <span>LABA KOTOR (GROSS PROFIT)</span>
+                  <span className="font-mono">Rp {selectedLabaKotor.toLocaleString('id-ID')}</span>
+                </div>
+
+                {/* Expenses */}
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-black uppercase text-slate-800">C. BEBAN OPERASIONAL & UMUM</h4>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b text-left font-bold">
+                        <th className="p-2">Uraian Beban Operasional</th>
+                        <th className="p-2 text-right">Jumlah (Rp)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {operationalAccounts.map(a => (
+                        <tr key={a.kode} className="border-b">
+                          <td className="p-2 text-[10px]">{a.nama}</td>
+                          <td className="p-2 text-right font-mono text-[10px]">{a.amount.toLocaleString('id-ID')}</td>
+                        </tr>
+                      ))}
+                      <tr className="font-bold bg-slate-100">
+                        <td className="p-2 uppercase text-[9px]">TOTAL BEBAN OPERASIONAL</td>
+                        <td className="p-2 text-right font-mono text-indigo-900 text-[10px]">
+                          {selectedTotalOperational.toLocaleString('id-ID')}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Net Profit */}
+                <div className="flex justify-between items-center p-4 bg-rose-50 border border-rose-200 rounded font-black text-xs text-rose-800">
+                  <span>SISA HASIL USAHA BERSIH (NET SHU)</span>
+                  <span className="font-mono">Rp {selectedShuBersih.toLocaleString('id-ID')}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 5. NERACA */}
+          {selectedSheets.neraca && (
+            <div className="print-page space-y-4">
+              <h3 className="text-sm font-black uppercase border-b pb-2 text-slate-900">5. Laporan Posisi Keuangan (Neraca)</h3>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-100 border-b font-bold text-left">
+                    <th className="p-2 w-1/2">AKTIVA (ASET)</th>
+                    <th className="p-2 text-right">Saldo Aktiva</th>
+                    <th className="p-2 w-1/2">PASIVA (KEWAJIBAN & MODAL)</th>
+                    <th className="p-2 text-right">Saldo Pasiva</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: Math.max(assetsList.length, liabilitiesLancarList.length + liabilitiesPanjangList.length + equityList.length + 1) }).map((_, idx) => {
+                    const rowAssets = assetsList[idx];
+                    const rightAccounts = [
+                      ...liabilitiesLancarList,
+                      ...liabilitiesPanjangList,
+                      ...equityList,
+                      { nama: "SHU Tahun Berjalan", balance: selectedNeracaShu }
+                    ];
+                    const rowPasiva = rightAccounts[idx];
+                    return (
+                      <tr key={idx} className="border-b">
+                        <td className="p-2 text-[10px]">{rowAssets ? rowAssets.nama : ''}</td>
+                        <td className="p-2 text-right font-mono text-[10px]">
+                          {rowAssets ? rowAssets.balance.toLocaleString('id-ID') : ''}
+                        </td>
+                        <td className="p-2 text-[10px]">{rowPasiva ? rowPasiva.nama : ''}</td>
+                        <td className="p-2 text-right font-mono text-[10px]">
+                          {rowPasiva ? rowPasiva.balance.toLocaleString('id-ID') : ''}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="font-bold bg-slate-100">
+                    <td className="p-2 text-[10px]">TOTAL AKTIVA</td>
+                    <td className="p-2 text-right font-mono text-[10px]">Rp {totalAktiva.toLocaleString('id-ID')}</td>
+                    <td className="p-2 text-[10px]">TOTAL PASIVA</td>
+                    <td className="p-2 text-right font-mono text-[10px]">Rp {totalPasiva.toLocaleString('id-ID')}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 6. ARUS KAS */}
+          {selectedSheets.arus_kas && (
+            <div className="print-page space-y-4">
+              <h3 className="text-sm font-black uppercase border-b pb-2 text-slate-900">6. Laporan Arus Kas</h3>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-100 border-b font-bold text-left">
+                    <th className="p-2">Deskripsi Arus Kas Lembaga</th>
+                    <th className="p-2 text-right">Jumlah Rupiah (Rp)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="font-bold bg-slate-50">
+                    <td className="p-2 text-[10px]">A. ARUS KAS DARI AKTIVITAS OPERASIONAL</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{cashFlow.totalOp.toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr>
+                    <td className="p-2 pl-6 text-[10px]">- Penerimaan Pendapatan Jasa</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{cashFlow.opIn_Revenue.toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr>
+                    <td className="p-2 pl-6 text-[10px]">- Pembayaran Operasional & Beban</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{(-cashFlow.opOut_Expense).toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr>
+                    <td className="p-2 pl-6 text-[10px]">- Perubahan Modal Kerja & Piutang</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{cashFlow.op_WorkingCapital.toLocaleString('id-ID')}</td>
+                  </tr>
+
+                  <tr className="font-bold bg-slate-50">
+                    <td className="p-2 text-[10px]">B. ARUS KAS DARI AKTIVITAS INVESTASI</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{cashFlow.totalInv.toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr>
+                    <td className="p-2 pl-6 text-[10px]">- Penjualan Aset Tetap</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{cashFlow.invIn.toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr>
+                    <td className="p-2 pl-6 text-[10px]">- Pembelian Aset Tetap Baru</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{(-cashFlow.invOut).toLocaleString('id-ID')}</td>
+                  </tr>
+
+                  <tr className="font-bold bg-slate-50">
+                    <td className="p-2 text-[10px]">C. ARUS KAS DARI AKTIVITAS PENDANAAN</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{cashFlow.totalFin.toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr>
+                    <td className="p-2 pl-6 text-[10px]">- Tambahan Setoran Modal Penyertaan</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{cashFlow.finIn.toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr>
+                    <td className="p-2 pl-6 text-[10px]">- Payout Dividen / Pengembalian Modal</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{(-cashFlow.finOut).toLocaleString('id-ID')}</td>
+                  </tr>
+
+                  <tr className="font-bold bg-slate-100">
+                    <td className="p-3 text-[10px]">SALDO AKHIR KAS (AKTUAL/REKONSILIASI)</td>
+                    <td className="p-3 text-right font-mono text-[10px]">Rp {cashFlow.saldoAkhir.toLocaleString('id-ID')}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 7. PEMBAGIAN SHU */}
+          {selectedSheets.pembagian_shu && (
+            <div className="print-page space-y-6">
+              <h3 className="text-sm font-black uppercase border-b pb-2 text-slate-900">7. Alokasi Simulasi Pembagian SHU RAT</h3>
+              <div className="p-4 bg-slate-50 rounded border text-xs">
+                <span className="font-bold text-[10px]">Sisa Hasil Usaha yang Dialokasikan:</span> Rp {activeShuNominal.toLocaleString('id-ID')}
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-100 font-bold border-b text-left">
+                    <th className="p-2">Uraian Pos Alokasi</th>
+                    <th className="p-2">Rasio (%)</th>
+                    <th className="p-2 text-right">Alokasi Rupiah (Rp)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b">
+                    <td className="p-2 font-semibold text-[10px]">Cadangan Koperasi</td>
+                    <td className="p-2 text-[10px]">{percentCadangan}%</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{nominalCadangan.toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-semibold text-[10px]">Jasa Modal (Simpanan)</td>
+                    <td className="p-2 text-[10px]">{percentJasaModal}%</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{nominalJasaModal.toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-semibold text-[10px]">Jasa Anggota (Transaksi Belanja)</td>
+                    <td className="p-2 text-[10px]">{percentJasaUsaha}%</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{nominalJasaUsaha.toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-semibold text-[10px]">Dana Pengurus</td>
+                    <td className="p-2 text-[10px]">{percentPengurus}%</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{nominalPengurus.toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-semibold text-[10px]">Dana Sosial</td>
+                    <td className="p-2 text-[10px]">{percentSosial}%</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{nominalSosial.toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-semibold text-[10px]">Dana Pendidikan</td>
+                    <td className="p-2 text-[10px]">{percentPendidikan}%</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{nominalPendidikan.toLocaleString('id-ID')}</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-semibold text-[10px]">Dana PEADES</td>
+                    <td className="p-2 text-[10px]">{percentPeades}%</td>
+                    <td className="p-2 text-right font-mono text-[10px]">{nominalPeades.toLocaleString('id-ID')}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 8. REKAP SIMPANAN */}
+          {selectedSheets.rekap_simpanan && (
+            <div className="print-page space-y-4">
+              <h3 className="text-sm font-black uppercase border-b pb-2 text-slate-900">8. Rekapitulasi Saldo Simpanan Anggota</h3>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-100 border-b text-left font-bold">
+                    <th className="p-2">ID</th>
+                    <th className="p-2">Nama Anggota</th>
+                    <th className="p-2 text-right">Pokok (Rp)</th>
+                    <th className="p-2 text-right">Wajib (Rp)</th>
+                    <th className="p-2 text-right">Sukarela (Rp)</th>
+                    <th className="p-2 text-right font-bold">Total Simpanan (Rp)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(anggotaData || []).map(m => {
+                    const rc = memberRecapData[m.id] || { pokok: 0, wajib: 0, sukarela: 0 };
+                    return (
+                      <tr key={m.id} className="border-b">
+                        <td className="p-2 font-mono text-[10px]">{m.id}</td>
+                        <td className="p-2 font-semibold text-[10px]">{m.nama}</td>
+                        <td className="p-2 text-right font-mono text-[10px]">{rc.pokok.toLocaleString('id-ID')}</td>
+                        <td className="p-2 text-right font-mono text-[10px]">{rc.wajib.toLocaleString('id-ID')}</td>
+                        <td className="p-2 text-right font-mono text-[10px]">{rc.sukarela.toLocaleString('id-ID')}</td>
+                        <td className="p-2 text-right font-mono font-bold text-[10px]">
+                          {(rc.pokok + rc.wajib + rc.sukarela).toLocaleString('id-ID')}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 9. REKAP PINJAMAN */}
+          {selectedSheets.rekap_pinjaman && (
+            <div className="print-page space-y-4">
+              <h3 className="text-sm font-black uppercase border-b pb-2 text-slate-900">9. Rekapitulasi Kewajiban Pinjaman Anggota</h3>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-100 border-b text-left font-bold">
+                    <th className="p-2">ID</th>
+                    <th className="p-2">Nama Anggota</th>
+                    <th className="p-2 text-right font-bold">Total Pinjaman Aktif (Rp)</th>
+                    <th className="p-2 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(anggotaData || []).map(m => {
+                    const rc = memberRecapData[m.id] || { pinjaman: 0 };
+                    return (
+                      <tr key={m.id} className="border-b">
+                        <td className="p-2 font-mono text-[10px]">{m.id}</td>
+                        <td className="p-2 font-semibold text-[10px]">{m.nama}</td>
+                        <td className="p-2 text-right font-mono font-bold text-slate-900 text-[10px]">
+                          {rc.pinjaman.toLocaleString('id-ID')}
+                        </td>
+                        <td className="p-2 text-center font-bold text-[9px] uppercase">
+                          {rc.pinjaman > 0 ? "Outstanding" : "Nihil/Lunas"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 10. STOK / LOGISTIK */}
+          {selectedSheets.stok && (
+            <div className="print-page space-y-4">
+              <h3 className="text-sm font-black uppercase border-b pb-2 text-slate-900">10. Inventaris Logistik Gudang & Dagang</h3>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-100 border-b text-left font-bold">
+                    <th className="p-2">Kode</th>
+                    <th className="p-2">Nama Barang</th>
+                    <th className="p-2 text-right">Harga Jual (Rp)</th>
+                    <th className="p-2 text-right">Jumlah Stok</th>
+                    <th className="p-2 text-right font-bold">Est. Total Penjualan (Rp)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(props.stokData || []).map(s => (
+                    <tr key={s.id} className="border-b">
+                      <td className="p-2 font-mono font-bold text-[10px]">{s.kode}</td>
+                      <td className="p-2 font-semibold text-[10px]">{s.nama}</td>
+                      <td className="p-2 text-right font-mono text-[10px]">{s.hargaJual.toLocaleString('id-ID')}</td>
+                      <td className="p-2 text-right font-mono font-bold text-[10px]">{s.qty}</td>
+                      <td className="p-2 text-right font-mono font-bold text-slate-900 text-[10px]">
+                        {(s.hargaJual * s.qty).toLocaleString('id-ID')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

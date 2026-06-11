@@ -78,3 +78,52 @@
 .dark .shadow-sm, .dark .shadow, .dark .shadow-md {
   box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3) !important;
 }
+
+/* --- CSS PAGED MEDIA PRINT STYLING --- */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-only-container, #print-only-container * {
+    visibility: visible;
+  }
+  #print-only-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  .print-page {
+    page-break-after: always;
+    break-after: page;
+    width: 100%;
+    margin-bottom: 2rem;
+  }
+  /* Ensure clean text and tables in print mode */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  th, td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 6px 10px !important;
+    font-size: 10px;
+    line-height: 1.2;
+  }
+  th {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+    font-weight: bold;
+  }
+  /* Reset background and colors to keep print sharp and ink-friendly */
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}
+@page {
+  size: A4 portrait;
+  margin: 15mm 15mm 20mm 15mm;
+}

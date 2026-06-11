@@ -65,6 +65,7 @@ import { SupportTicket } from './components/SupportTicket';
 import { DataValidationEngine } from './components/DataValidationEngine';
 import { TenantBilling } from './components/TenantBilling';
 import { SecurityAudit } from './components/SecurityAudit';
+import { UserGuide } from './components/UserGuide';
 import { logSecurityEvent } from './utils/auditLogger';
 import { PLAN_DEFAULT_FEATURES } from './components/SaaSFeatureManagement';
 
@@ -3968,6 +3969,7 @@ export default function App() {
             kontakLainData={kontakLainData}
             fixedAssets={fixedAssets}
             returPembelianData={returPembelianData}
+            koperasiName={koperasiName}
           />,
           "laporan",
           "Basic",
@@ -4008,6 +4010,8 @@ export default function App() {
             isGlobalAdmin={isGlobalAdmin}
           />
         );
+      case "user_guide":
+        return <UserGuide />;
       case "coa":
         return (
           <COA 
@@ -5095,7 +5099,7 @@ export default function App() {
 
   const isPagePermitted = (pageId: string): boolean => {
     if (isGlobalAdmin) return true;
-    if (pageId === "dashboard" || pageId === "support" || pageId === "saas_billing") return true; 
+    if (pageId === "dashboard" || pageId === "support" || pageId === "saas_billing" || pageId === "user_guide") return true; 
     if (!currentUserDetail) return false;
     if (currentUserDetail.username === "SuperIT") return true; 
 
@@ -5566,6 +5570,15 @@ export default function App() {
               className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'support' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
             >
               <LifeBuoy className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Pengaduan &amp; Bantuan</span>}
+            </button>
+
+            <button 
+              id="nav-user-guide"
+              onClick={() => setActivePage('user_guide')}
+              title={isSidebarCollapsed ? "Panduan Pengguna" : ""}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'user_guide' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
+            >
+              <BookOpen className="h-4 w-4 shrink-0" /> {!isSidebarCollapsed && <span>Panduan Pengguna</span>}
             </button>
 
             {!isGlobalAdmin && (
