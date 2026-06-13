@@ -80,11 +80,12 @@ interface AnggotaProps {
   koperasiId?: string;
   koperasiName?: string;
   koperasiLogo?: string;
+  initialTab?: "daftar" | "tagihan";
 }
 
 export function AnggotaList(props: AnggotaProps) {
   // Navigation tabs: "daftar" (Daftar Anggota) or "tagihan" (Layanan Tagihan & Penagihan)
-  const [activeTab, setActiveTab] = useState<"daftar" | "tagihan">("daftar");
+  const [activeTab, setActiveTab] = useState<"daftar" | "tagihan">(props.initialTab || "daftar");
 
   // State for member modal
   const [isModalOpen, setIsModalOpen] = useState(false);

@@ -51,8 +51,12 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
   const setSalesList = props.onUpdateSalesHistory;
   
   // Date selection states
-  const [selectedMonth, setSelectedMonth] = useState<number>(5); // 0-indexed: May=4, June=5 (Default June)
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [viewMode, setViewMode] = useState<'daily' | 'monthly' | 'range'>('monthly');
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [startDate, setStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
   
   // Search query
   const [searchQuery, setSearchQuery] = useState("");
@@ -60,9 +64,13 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
   // Selected sale for receipt viewing
   const [selectedReceipt, setSelectedReceipt] = useState<PastSale | null>(null);
 
-  // Form input states for adding new cashier recap entries representing a full month period
-  const [inputMonth, setInputMonth] = useState<number>(5); // Default to June (index 5)
-  const [inputYear, setInputYear] = useState<number>(2026); // Default 2026
+  // Deletion confirmation state
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // Form input states for adding new cashier recap entries
+  const [inputDate, setInputDate] = useState(new Date().toISOString().split('T')[0]);
+  const [inputMonth, setInputMonth] = useState<number>(new Date().getMonth());
+  const [inputYear, setInputYear] = useState<number>(new Date().getFullYear());
   const [inputKasir, setInputKasir] = useState("");
   const [inputPayment, setInputPayment] = useState("1-1101"); // Default Kas Tunai
   const [selectedStokId, setSelectedStokId] = useState("");
@@ -149,9 +157,12 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
     const cleanedDiscount = Math.max(0, inputDiskon);
     const calculatedTotal = Math.max(0, sub - cleanedDiscount);
 
-    // Compute synthetic date representing the full month period (1st of the month)
-    const generatedTgl = `${inputYear}-${String(inputMonth + 1).padStart(2, "0")}-01`;
-    const datePart = `${inputYear}${String(inputMonth + 1).padStart(2, "0")}`;
+    // Compute synthetic date
+    const generatedTgl = viewMode === 'monthly' 
+      ? `${inputYear}-${String(inputMonth + 1).padStart(2, "0")}-01`
+      : inputDate;
+      
+    const datePart = generatedTgl.replace(/-/g, "").substring(0, 6);
     const totalToday = salesList.filter(s => s.id.startsWith(`PJ-REKAP-${datePart}`)).length + 1;
     const generatedId = `PJ-REKAP-${datePart}-${String(totalToday).padStart(3, "0")}`;
 
@@ -244,13 +255,19 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
     setTimeout(() => setSuccessMessage(""), 4000);
   };
 
-  // Filter list of sales to the selected month and year
-  const activeMonthSales = salesList.filter(sale => {
-    const parts = sale.tgl.split('-');
-    if (parts.length >= 2) {
-      const saleYear = parseInt(parts[0], 10);
-      const saleMonth = parseInt(parts[1], 10) - 1; // 0-indexed
-      return saleYear === selectedYear && saleMonth === selectedMonth;
+  // Filter list of sales based on view mode
+  const activeSales = salesList.filter(sale => {
+    if (viewMode === 'daily') {
+      return sale.tgl === selectedDate;
+    } else if (viewMode === 'range') {
+      return sale.tgl >= startDate && sale.tgl <= endDate;
+    } else {
+      const parts = sale.tgl.split('-');
+      if (parts.length >= 2) {
+        const saleYear = parseInt(parts[0], 10);
+        const saleMonth = parseInt(parts[1], 10) - 1; // 0-indexed
+        return saleYear === selectedYear && saleMonth === selectedMonth;
+      }
     }
     return false;
   });
@@ -258,9 +275,9 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
   // Calculate high level KPI Metrics
   let totalGrossRevenue = 0;
   let totalHppCost = 0;
-  let totalTrans = activeMonthSales.length;
+  let totalTrans = activeSales.length;
 
-  activeMonthSales.forEach(sale => {
+  activeSales.forEach(sale => {
     totalGrossRevenue += sale.total;
     
     // For each item in the sale, compute HPP
@@ -297,29 +314,69 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
 
   const monthlyVarianceLoss = computeOpnameVariance();
 
-  // Process data for Recharts (Daily Sales of the month)
-  const getDaysInMonth = (m: number, y: number) => {
-    return new Date(y, m + 1, 0).getDate();
-  };
-
-  const daysInCurrentMonth = getDaysInMonth(selectedMonth, selectedYear);
-  const chartData = Array.from({ length: daysInCurrentMonth }, (_, i) => {
-    const dayNum = i + 1;
-    const dayStr = String(dayNum).padStart(2, "0");
-    const formattedDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-${dayStr}`;
-    
-    const daySales = activeMonthSales.filter(s => s.tgl === formattedDate);
-    const dayTotal = daySales.reduce((acc, curr) => acc + curr.total, 0);
-
-    return {
-      tanggal: `${dayNum}`,
-      Penjualan: dayTotal
+  // Process data for Recharts
+  const chartData = viewMode === 'monthly' ? (() => {
+    const getDaysInMonth = (m: number, y: number) => {
+      return new Date(y, m + 1, 0).getDate();
     };
-  });
+
+    const daysInCurrentMonth = getDaysInMonth(selectedMonth, selectedYear);
+    return Array.from({ length: daysInCurrentMonth }, (_, i) => {
+      const dayNum = i + 1;
+      const dayStr = String(dayNum).padStart(2, "0");
+      const formattedDate = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}-${dayStr}`;
+      
+      const daySales = activeSales.filter(s => s.tgl === formattedDate);
+      const dayTotal = daySales.reduce((acc, curr) => acc + curr.total, 0);
+
+      return {
+        label: `${dayNum}`,
+        Penjualan: dayTotal
+      };
+    });
+  })() : viewMode === 'range' ? (() => {
+    // Logic for range mode: show each day between startDate and endDate
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    
+    // Limit to safe amount of bars to prevent chart overflow (e.g., max 60 days)
+    const limitedDays = Math.min(diffDays, 62);
+    
+    return Array.from({ length: limitedDays }, (_, i) => {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+      const dayTotal = salesList
+        .filter(s => s.tgl === dateStr)
+        .reduce((acc, curr) => acc + curr.total, 0);
+      
+      return {
+        label: d.getDate().toString(),
+        Penjualan: dayTotal
+      };
+    });
+  })() : (() => {
+    // For daily mode, show sales breakdown by transaction (comparing to 7 days before)
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(selectedDate);
+      d.setDate(d.getDate() - (6 - i));
+      const dateStr = d.toISOString().split('T')[0];
+      const dayTotal = salesList
+        .filter(s => s.tgl === dateStr)
+        .reduce((acc, curr) => acc + curr.total, 0);
+      
+      return {
+        label: d.getDate().toString(),
+        Penjualan: dayTotal
+      };
+    });
+  })();
 
   // Compile top products ranking
   const productSalesMap: Record<string, { qty: number; revenue: number; hpp: number }> = {};
-  activeMonthSales.forEach(sale => {
+  activeSales.forEach(sale => {
     sale.items.forEach(item => {
       const pName = item.nama;
       let mCost = 0;
@@ -352,25 +409,29 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
   }).sort((a, b) => b.qty - a.qty);
 
   // Filter transaction records by query (customer or transaction ID)
-  const filteredTransactions = activeMonthSales.filter(sale => 
+  const filteredTransactions = activeSales.filter(sale => 
     sale.id.toLowerCase().includes(searchQuery.toLowerCase()) || 
     sale.customerNama.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    sale.paymentName.toLowerCase().includes(searchQuery.toLowerCase())
+    (sale.paymentName && sale.paymentName.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   // Helper clear log item (admin only)
   const handleDeleteSale = (id: string) => {
     if (props.accessMode !== "admin") {
-      alert("Akses ditolak: Hanya administrator yang dapat menghapus rincian sales history.");
+      setErrorMessage("Akses ditolak: Hanya administrator yang dapat menghapus rincian sales history.");
+      setTimeout(() => setErrorMessage(""), 3000);
       return;
     }
-    if (confirm("Apakah Anda yakin ingin menghapus log penjualan ini dari sejarah rekap bulanan? (Tindakan ini tidak membatalkan transaksi jurnal atau mengembalikan stok fisik)")) {
-      const upd = salesList.filter(s => s.id !== id);
-      setSalesList(upd);
-      if (selectedReceipt && selectedReceipt.id === id) {
-        setSelectedReceipt(null);
-      }
+    
+    const upd = salesList.filter(s => s.id !== id);
+    setSalesList(upd);
+    
+    if (selectedReceipt && selectedReceipt.id === id) {
+      setSelectedReceipt(null);
     }
+    setDeleteConfirmId(null);
+    setSuccessMessage("Berhasil menghapus log penjualan.");
+    setTimeout(() => setSuccessMessage(""), 3000);
   };
 
   const handlePrintReport = () => {
@@ -379,7 +440,16 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
 
   const exportToCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += `Rekap Penjualan Bulanan Periode ${months[selectedMonth]} ${selectedYear}\r\n`;
+    let periodLabel = "";
+    if (viewMode === 'daily') {
+      periodLabel = selectedDate;
+    } else if (viewMode === 'range') {
+      periodLabel = `${startDate} s/d ${endDate}`;
+    } else {
+      periodLabel = `${months[selectedMonth]} ${selectedYear}`;
+    }
+      
+    csvContent += `Rekap Penjualan ${viewMode === 'daily' ? 'Harian' : (viewMode === 'range' ? 'Rentang' : 'Bulanan')} Periode ${periodLabel}\r\n`;
     csvContent += "ID Transaksi,Tanggal,Customer / Kasir,Metode Pembayaran,Subtotal (Rp),Diskon (Rp),Total Bersih (Rp),Barang,Qty,Harga Jual Satuan (Rp)\r\n";
     
     filteredTransactions.forEach(sale => {
@@ -388,7 +458,7 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
           `"${sale.id}"`,
           `"${sale.tgl}"`,
           `"${sale.customerNama.replace(/"/g, '""')}"`,
-          `"${sale.paymentName}"`,
+          `"${sale.paymentName || ''}"`,
           sale.subtotal.toString(),
           sale.discount.toString(),
           sale.total.toString(),
@@ -403,7 +473,15 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `REKAP_PENJUALAN_${months[selectedMonth].toUpperCase()}_${selectedYear}.csv`);
+    let fileName = "";
+    if (viewMode === 'daily') {
+      fileName = `REKAP_PENJUALAN_HARIAN_${selectedDate}.csv`;
+    } else if (viewMode === 'range') {
+      fileName = `REKAP_PENJUALAN_RENTANG_${startDate}_${endDate}.csv`;
+    } else {
+      fileName = `REKAP_PENJUALAN_BULANAN_${months[selectedMonth].toUpperCase()}_${selectedYear}.csv`;
+    }
+    link.setAttribute("download", fileName);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -448,6 +526,34 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
           </p>
         </div>
 
+        {/* MODE TOGGLE */}
+        <div className="flex bg-slate-100 p-1 rounded-xl items-center self-start lg:self-center">
+          <button
+            onClick={() => setViewMode('daily')}
+            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              viewMode === 'daily' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Harian
+          </button>
+          <button
+            onClick={() => setViewMode('range')}
+            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              viewMode === 'range' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Rentang
+          </button>
+          <button
+            onClick={() => setViewMode('monthly')}
+            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              viewMode === 'monthly' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Bulanan
+          </button>
+        </div>
+
         {/* PRINT & EXPORT BUTTON */}
         <div className="flex gap-2.5 flex-wrap">
           <button
@@ -464,39 +570,89 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
       {/* FILTER & DATE CONTROLLER BAR */}
       <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest flex items-center gap-1">
-              <Calendar className="h-3 w-3" /> Pilih Bulan Recap
-            </span>
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))}
-              className="px-3.5 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-red-500 font-bold text-gray-800 bg-slate-50 hover:bg-slate-100 transition"
-            >
-              {months.map((m, idx) => (
-                <option key={idx} value={idx}>{m}</option>
-              ))}
-            </select>
-          </div>
+          {viewMode === 'daily' && (
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest flex items-center gap-1">
+                <Calendar className="h-3 w-3" /> Pilih Tanggal Recap
+              </span>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="px-3.5 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-red-500 font-bold text-gray-800 bg-slate-50 hover:bg-slate-100 transition"
+              />
+            </div>
+          )}
+          
+          {viewMode === 'range' && (
+            <>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest flex items-center gap-1">
+                  <Calendar className="h-3 w-3" /> Dari Tanggal
+                </span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="px-3.5 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-red-500 font-bold text-gray-800 bg-slate-50 hover:bg-slate-100 transition"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest flex items-center gap-1">
+                  <Calendar className="h-3 w-3" /> Sampai Tanggal
+                </span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="px-3.5 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-red-500 font-bold text-gray-800 bg-slate-50 hover:bg-slate-100 transition"
+                />
+              </div>
+            </>
+          )}
 
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Tahun</span>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
-              className="px-3.5 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-red-500 font-bold text-gray-800 bg-slate-50 hover:bg-slate-100 transition"
-            >
-              <option value={2025}>2025</option>
-              <option value={2026}>2026</option>
-              <option value={2027}>2027</option>
-            </select>
-          </div>
+          {viewMode === 'monthly' && (
+            <>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest flex items-center gap-1">
+                  <Calendar className="h-3 w-3" /> Pilih Bulan Recap
+                </span>
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))}
+                  className="px-3.5 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-red-500 font-bold text-gray-800 bg-slate-50 hover:bg-slate-100 transition"
+                >
+                  {months.map((m, idx) => (
+                    <option key={idx} value={idx}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Tahun</span>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
+                  className="px-3.5 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-red-500 font-bold text-gray-800 bg-slate-50 hover:bg-slate-100 transition"
+                >
+                  <option value={2025}>2025</option>
+                  <option value={2026}>2026</option>
+                  <option value={2027}>2027</option>
+                </select>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="text-right text-xs text-gray-500 bg-slate-50 p-2.5 rounded-xl border border-dashed border-gray-200">
           <p className="font-semibold">Mencakup periode:</p>
           <p className="font-mono text-gray-950 font-bold text-[11px] mt-0.5">
-            01 {months[selectedMonth]} {selectedYear} s/d {daysInCurrentMonth} {months[selectedMonth]} {selectedYear}
+            {viewMode === 'daily' 
+              ? `${new Date(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`
+              : viewMode === 'range'
+                ? `${new Date(startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} s/d ${new Date(endDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`
+                : `01 ${months[selectedMonth]} ${selectedYear} s/d ${new Date(selectedYear, selectedMonth + 1, 0).getDate()} ${months[selectedMonth]} ${selectedYear}`
+            }
           </p>
         </div>
       </div>
@@ -509,7 +665,7 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
             <h3 className="text-sm font-bold text-slate-800">Tabel Input Rekap Penjualan Kasir</h3>
           </div>
           <span className="text-[10px] text-gray-450 bg-slate-50 border border-slate-200 px-2 py-1 rounded">
-            Periode Aktif: <strong>{months[selectedMonth]} {selectedYear}</strong>
+            Periode Laporan: <strong>{viewMode === 'daily' ? selectedDate : (viewMode === 'range' ? `${startDate} s/d ${endDate}` : `${months[selectedMonth]} ${selectedYear}`)}</strong>
           </span>
         </div>
 
@@ -529,30 +685,42 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
         <form onSubmit={handleAddRecapRow} className="space-y-4">
           <div className="overflow-x-auto border border-gray-200 rounded-xl bg-slate-50/70 p-4">
             <div className="min-w-[900px] grid grid-cols-12 gap-3 items-end text-xs">
-              {/* PERIOD SELECTOR */}
-              <div className="col-span-2 flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-gray-450 uppercase tracking-wider block">Periode Rekap</label>
-                <div className="flex gap-1">
-                  <select
-                    value={inputMonth}
-                    onChange={(e) => setInputMonth(parseInt(e.target.value, 10))}
-                    className="w-1/2 px-1 py-1.5 text-[11px] border border-gray-300 rounded-lg focus:outline-none focus:border-red-500 font-bold bg-white text-gray-800"
-                  >
-                    {months.map((m, idx) => (
-                      <option key={idx} value={idx}>{m.substring(0, 3)}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={inputYear}
-                    onChange={(e) => setInputYear(parseInt(e.target.value, 10))}
-                    className="w-1/2 px-1 py-1.5 text-[11px] border border-gray-300 rounded-lg focus:outline-none focus:border-red-500 font-bold bg-white text-gray-800"
-                  >
-                    <option value={2025}>2025</option>
-                    <option value={2026}>2026</option>
-                    <option value={2027}>2027</option>
-                  </select>
+              {/* DATE SELECTOR or PERIOD SELECTOR */}
+              {viewMode === 'daily' ? (
+                <div className="col-span-2 flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-450 uppercase tracking-wider block">Tanggal Transaksi</label>
+                  <input
+                    type="date"
+                    value={inputDate}
+                    onChange={(e) => setInputDate(e.target.value)}
+                    className="w-full px-2 py-1.5 text-[11px] border border-gray-300 rounded-lg focus:outline-none focus:border-red-500 font-bold bg-white text-gray-800"
+                  />
                 </div>
-              </div>
+              ) : (
+                <div className="col-span-2 flex flex-col gap-1.5">
+                  <label className="text-[10px] font-extrabold text-gray-450 uppercase tracking-wider block">Periode Rekap</label>
+                  <div className="flex gap-1">
+                    <select
+                      value={inputMonth}
+                      onChange={(e) => setInputMonth(parseInt(e.target.value, 10))}
+                      className="w-1/2 px-1 py-1.5 text-[11px] border border-gray-300 rounded-lg focus:outline-none focus:border-red-500 font-bold bg-white text-gray-800"
+                    >
+                      {months.map((m, idx) => (
+                        <option key={idx} value={idx}>{m.substring(0, 3)}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={inputYear}
+                      onChange={(e) => setInputYear(parseInt(e.target.value, 10))}
+                      className="w-1/2 px-1 py-1.5 text-[11px] border border-gray-300 rounded-lg focus:outline-none focus:border-red-500 font-bold bg-white text-gray-800"
+                    >
+                      <option value={2025}>2025</option>
+                      <option value={2026}>2026</option>
+                      <option value={2027}>2027</option>
+                    </select>
+                  </div>
+                </div>
+              )}
 
               {/* CASHIER */}
               <div className="col-span-2 flex flex-col gap-1.5">
@@ -647,7 +815,7 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
                   min={0}
                   value={inputDiskon}
                   onChange={(e) => setInputDiskon(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:border-red-500 font-bold bg-white text-right"
+                  className="w-full px-2.5 py-1.5 text-[11px] leading-[12px] border border-gray-300 rounded-lg focus:outline-none focus:border-red-500 font-bold bg-white text-left"
                 />
               </div>
 
@@ -665,7 +833,7 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
             {/* INLINE ESTIMATE SUMMARY */}
             <div className="mt-3.5 pt-3.5 border-t border-slate-200 flex flex-wrap items-center justify-between text-[11px] text-gray-500">
               <div className="italic">
-                * Nota POS baru otomatis terpublikasikan dengan format ID: <strong className="font-mono text-slate-900">PJ-REKAP-{inputYear}{String(inputMonth + 1).padStart(2, "0")}-xxx</strong>
+                * Nota POS baru otomatis terpublikasikan dengan format ID: <strong className="font-mono text-slate-900">PJ-REKAP-{viewMode === 'monthly' ? `${inputYear}${String(inputMonth + 1).padStart(2, '0')}` : inputDate.replace(/-/g, '').substring(0, 6)}-xxx</strong>
               </div>
               <div className="flex gap-4 font-mono font-bold">
                 <span>Subtotal: <strong className="text-gray-900 text-xs">Rp {((inputQty * inputHarga)).toLocaleString('id-ID')}</strong></span>
@@ -780,6 +948,56 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
         </div>
       </div>
 
+      {/* SALES CHART SECTION */}
+      <div className="bg-white rounded-2xl border border-gray-150 p-6 shadow-xs no-print">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">Visualisasi Tren Omset</h3>
+            <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider mt-0.5">
+              {viewMode === 'daily' ? 'Perbandingan 7 Hari Terakhir' : (viewMode === 'range' ? `Grafik Rentang ${startDate} - ${endDate}` : `Grafik Harian Bulan ${months[selectedMonth]}`)}
+            </p>
+          </div>
+          <div className="flex items-center gap-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 bg-red-600 rounded-xs"></div>
+              <span>Volume Omset</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="h-[250px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis 
+                dataKey="label" 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{fontSize: 10, fill: '#64748b'}}
+                dy={10}
+              />
+              <YAxis 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{fontSize: 10, fill: '#64748b'}}
+                tickFormatter={(val) => `Rp${(val/1000).toLocaleString()}k`}
+              />
+              <Tooltip 
+                cursor={{fill: '#f8fafc'}}
+                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '12px', fontWeight: 'bold' }}
+                formatter={(value: any) => [`Rp ${value.toLocaleString('id-ID')}`, 'Penjualan']}
+              />
+              <Bar 
+                dataKey="Penjualan" 
+                fill="#dc2626" 
+                radius={[4, 4, 0, 0]} 
+                barSize={viewMode === 'daily' ? 40 : 20}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
       {/* TRANSACTION LIST VIEW */}
       <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden no-print">
         
@@ -788,7 +1006,7 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
           <div>
             <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Log Buku Kasir</h4>
             <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-1.5">
-              Rincian Ringkasan Penjualan ({activeMonthSales.length} Sesi Terdaftar)
+              Rincian Ringkasan Penjualan {viewMode === 'daily' ? 'Harian' : (viewMode === 'range' ? 'Rentang' : 'Bulanan')} ({activeSales.length} Sesi Terdaftar)
             </h3>
           </div>
 
@@ -887,15 +1105,43 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
                           >
                             <FileText className="h-3.5 w-3.5" /> Lihat Nota
                           </button>
+                          
                           {props.accessMode === "admin" && (
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteSale(sale.id)}
-                              className="text-gray-400 hover:text-red-650 p-1.5 hover:bg-slate-100 rounded-lg transition transition-colors"
-                              title="Hapus Penjualan"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            <div className="relative">
+                              {deleteConfirmId === sale.id ? (
+                                <div className="absolute right-0 bottom-0 mb-8 bg-white border border-gray-200 shadow-xl rounded-xl p-2 z-10 w-32 animate-in zoom-in-95">
+                                  <p className="text-[9px] font-black uppercase text-gray-500 mb-2">Hapus Log Ini?</p>
+                                  <div className="flex gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteSale(sale.id)}
+                                      className="flex-1 bg-red-600 text-white py-1 rounded text-[9px] font-bold cursor-pointer"
+                                    >
+                                      Ya
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteConfirmId(null)}
+                                      className="flex-1 bg-gray-100 text-gray-600 py-1 rounded text-[9px] font-bold cursor-pointer"
+                                    >
+                                      Batal
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => setDeleteConfirmId(sale.id === deleteConfirmId ? null : sale.id)}
+                                className={`p-1.5 rounded-lg transition-colors border ${
+                                  deleteConfirmId === sale.id 
+                                    ? "bg-red-100 text-red-700 border-red-200" 
+                                    : "text-gray-400 hover:text-red-650 hover:bg-slate-100 border-transparent"
+                                }`}
+                                title="Hapus Penjualan"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
                           )}
                         </div>
                       </td>
@@ -911,6 +1157,35 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
       {/* COMPACT FLOATING VIEW INVOICE DETAILED RECEIPT MODAL */}
       {selectedReceipt && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150 no-print">
+          {/* Deletion Confirmation from Modal context */}
+          {deleteConfirmId === selectedReceipt.id && (
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+              <div className="bg-white rounded-2xl p-6 max-w-xs w-full shadow-2xl border border-rose-100 text-center animate-in zoom-in-95">
+                <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Trash2 className="h-6 w-6" />
+                </div>
+                <h4 className="text-sm font-black text-slate-900 mb-2 uppercase tracking-wide">Hapus Log Penjualan?</h4>
+                <p className="text-[11px] text-gray-500 mb-6 leading-relaxed">
+                  Apakah Anda yakin ingin menghapus data <strong>{selectedReceipt.id}</strong> dari buku log kasir?
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleDeleteSale(selectedReceipt.id)}
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-xl text-xs font-black transition cursor-pointer"
+                  >
+                    Ya, Hapus
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirmId(null)}
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2 rounded-xl text-xs font-black transition cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-gray-150 overflow-hidden flex flex-col max-h-[90vh]">
             {/* Modal Header */}
             <div className="bg-slate-900 text-white p-4 flex items-center justify-between pb-3">
@@ -1028,6 +1303,16 @@ export function RekapPenjualan(props: RekapPenjualanProps) {
 
             {/* Modal Controls */}
             <div className="p-4 bg-slate-100 border-t flex gap-2.5">
+              {props.accessMode === "admin" && (
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmId(selectedReceipt.id)}
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 rounded-xl flex items-center justify-center transition cursor-pointer"
+                  title="Hapus Penjualan"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {

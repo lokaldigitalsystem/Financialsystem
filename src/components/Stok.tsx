@@ -30,7 +30,7 @@ interface StokProps {
   accessMode: "admin" | "view";
   onUpdateStok: (id: string, newQty: number) => void;
   onRestockStok: (id: string, qtyAdded: number, customHargaModal: number, tgl: string, keterangan: string, paymentCoa?: string) => void;
-  onAddStok: (kode: string, nama: string, hargaJual: number, hargaModal: number, initialQty: number) => void;
+  onAddStok: (kode: string, nama: string, hargaJual: number, hargaModal: number, initialQty: number, tglInput?: string) => void;
   onDeleteStok: (id: string) => void;
   onDeleteStokHistori: (id: string) => void;
 }
@@ -83,6 +83,7 @@ export function Stok(props: StokProps) {
   const [newHargaModal, setNewHargaModal] = useState<number>(0);
   const [newHargaJual, setNewHargaJual] = useState<number>(0);
   const [newQty, setNewQty] = useState<number>(0);
+  const [newTglInput, setNewTglInput] = useState(new Date().toISOString().split('T')[0]);
   const [errorAdd, setErrorAdd] = useState("");
 
   // Manage stock form states
@@ -134,7 +135,7 @@ export function Stok(props: StokProps) {
       return;
     }
 
-    props.onAddStok(newKode, newNama, newHargaJual, newHargaModal, newQty);
+    props.onAddStok(newKode, newNama, newHargaJual, newHargaModal, newQty, newTglInput);
     
     // Reset
     setNewKode("");
@@ -142,6 +143,7 @@ export function Stok(props: StokProps) {
     setNewHargaModal(0);
     setNewHargaJual(0);
     setNewQty(0);
+    setNewTglInput(new Date().toISOString().split('T')[0]);
     setIsAddProductModelOpen(false);
   };
 
@@ -407,6 +409,7 @@ export function Stok(props: StokProps) {
                 <thead>
                   <tr className="bg-red-600 text-white text-[11px] font-semibold tracking-wider">
                     <th className="py-3 px-4 w-[110px]">Kode</th>
+                    <th className="py-3 px-4 w-[120px]">Tgl Reg</th>
                     <th className="py-3 px-4">Nama Komoditas / Barang</th>
                     <th className="py-3 px-4 text-right">Harga Modal</th>
                     <th className="py-3 px-4 text-right">Harga Jual</th>
@@ -419,7 +422,7 @@ export function Stok(props: StokProps) {
                 <tbody className="divide-y divide-gray-100 text-xs text-gray-700">
                   {paginatedStok.length === 0 ? (
                     <tr>
-                      <td colSpan={props.accessMode === "admin" ? 8 : 7} className="py-8 text-center text-gray-400 font-medium">
+                      <td colSpan={props.accessMode === "admin" ? 9 : 8} className="py-8 text-center text-gray-400 font-medium">
                         Tidak ada barang logistik yang cocok dengan pencarian Anda.
                       </td>
                     </tr>
@@ -440,6 +443,9 @@ export function Stok(props: StokProps) {
                             <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-[10px]">
                               {item.kode}
                             </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-[10px] text-gray-500">
+                            {item.tglInput || "-"}
                           </td>
                           <td className="py-3 px-4">
                             <div className="font-semibold text-gray-900">{item.nama}</div>
@@ -851,15 +857,13 @@ export function Stok(props: StokProps) {
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Stok Awal Fisik</label>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tanggal Registrasi</label>
                   <input
-                    id="new-stok-qty"
-                    type="number"
+                    id="new-stok-tgl"
+                    type="date"
                     required
-                    min="0"
-                    placeholder="0"
-                    value={newQty}
-                    onChange={(e) => setNewQty(Math.max(0, parseInt(e.target.value) || 0))}
+                    value={newTglInput}
+                    onChange={(e) => setNewTglInput(e.target.value)}
                     className="px-3 py-2 border border-gray-200 rounded focus:outline-none focus:border-red-500 text-xs font-mono font-bold"
                   />
                 </div>
@@ -906,6 +910,20 @@ export function Stok(props: StokProps) {
                     className="px-3 py-2 border border-gray-200 rounded focus:outline-none focus:border-red-500 text-xs font-mono font-bold text-red-600"
                   />
                 </div>
+              </div>
+
+              <div className="flex flex-col gap-1 w-1/2">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Stok Awal Fisik</label>
+                <input
+                  id="new-stok-qty"
+                  type="number"
+                  required
+                  min="0"
+                  placeholder="0"
+                  value={newQty}
+                  onChange={(e) => setNewQty(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="px-3 py-2 border border-gray-200 rounded focus:outline-none focus:border-red-500 text-xs font-mono font-bold"
+                />
               </div>
 
               <div className="pt-3 flex gap-2">

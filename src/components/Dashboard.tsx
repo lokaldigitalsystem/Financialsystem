@@ -20,7 +20,7 @@ interface DashboardProps {
   tagihanData?: Tagihan[];
   salesHistory: PastSale[];
   onUpdateSalesHistory: React.Dispatch<React.SetStateAction<PastSale[]>>;
-  onNavigate: (page: string, jFilter?: string, cFilter?: string, cSearch?: string) => void;
+  onNavigate: (page: string, jFilter?: string, cFilter?: string, cSearch?: string, aTab?: "daftar" | "tagihan") => void;
   onResetData?: (toZero: boolean) => void;
   koperasiId?: string;
 }
@@ -35,21 +35,19 @@ export function Dashboard(props: DashboardProps) {
     visible: {
       opacity: 1,
       transition: {
-        staggerChildren: 0.05
+        staggerChildren: 0.05,
+        delayChildren: 0.1
       }
     }
   };
 
   const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        type: "spring",
-        stiffness: 100,
-        damping: 15
-      }
+    hidden: { opacity: 0, y: 15, filter: 'blur(4px)' },
+    visible: { 
+      opacity: 1, 
+      y: 0, 
+      filter: 'blur(0px)',
+      transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } 
     }
   };
 
@@ -886,7 +884,7 @@ export function Dashboard(props: DashboardProps) {
         {/* PIUTANG AKTIF KPI */}
         <motion.div 
           variants={itemVariants}
-          onClick={() => props.onNavigate('invoice')}
+          onClick={() => props.onNavigate('anggota', undefined, undefined, undefined, 'tagihan')}
           className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 relative overflow-hidden group cursor-pointer hover:border-amber-200 transition-all"
         >
           <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
@@ -1019,9 +1017,17 @@ export function Dashboard(props: DashboardProps) {
 
       {/* SUBTAB CONTENT 1: KESEHATAN & KPI TARGET */}
       {activeSubTab === 'analisis' && (
-        <div className="space-y-6">
+        <motion.div 
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+          className="space-y-6"
+        >
           {/* QUICK FINANCIAL RATIOS (RASIO LIKUIDITAS INSTAN) */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 mb-8 animate-in fade-in slide-in-from-bottom-3 duration-300">
+          <motion.div 
+            variants={itemVariants}
+            className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 mb-8"
+          >
         <div className="flex items-center gap-2.5 pb-4 mb-4 border-b border-gray-50">
           <div className="p-2 bg-red-50 text-red-600 rounded-lg">
             <Activity className="h-5 w-5 text-red-600" />
@@ -1133,7 +1139,7 @@ export function Dashboard(props: DashboardProps) {
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* COMPARISON CHART: OMSET VS BEBAN */}
       <motion.div 
@@ -1445,16 +1451,21 @@ export function Dashboard(props: DashboardProps) {
           </div>
         </div>
       </div>
-      </div>
+      </motion.div>
       )}
 
       {/* SUBTAB CONTENT 2: ARUS KAS & RINGKASAN UTAMA */}
       {activeSubTab === 'ringkasan' && (
-        <div className="space-y-6">
-          <div className="flex items-center gap-2 mb-2">
+        <motion.div 
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+          className="space-y-6"
+        >
+          <motion.div variants={itemVariants} className="flex items-center gap-2 mb-2">
             <div className="h-4 w-1 bg-red-600 rounded-full"></div>
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Likuiditas & Arus Kas</h3>
-          </div>
+          </motion.div>
 
           <motion.div 
             variants={containerVariants}
@@ -1577,9 +1588,9 @@ export function Dashboard(props: DashboardProps) {
             {/* TOTAL PENJUALAN */}
             <motion.div 
               variants={itemVariants}
-              onClick={() => props.onNavigate('inventori')}
+              onClick={() => props.onNavigate('rekappenjualan')}
               className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
-              title="Lihat Mutasi Penjualan (Harian/Bulanan)"
+              title="Lihat Rekap Penjualan Unit Toko"
             >
               <div className="p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -1605,8 +1616,9 @@ export function Dashboard(props: DashboardProps) {
             {/* PEMBELIAN / HPP */}
             <motion.div 
               variants={itemVariants}
+              onClick={() => props.onNavigate('stok')}
               className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition duration-200 cursor-pointer group"
-              title="Lihat Mutasi Pembelian (Harian/Bulanan)"
+              title="Lihat Mutasi Stok & Inventaris Toko"
             >
               <div className="p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -2053,19 +2065,22 @@ export function Dashboard(props: DashboardProps) {
           </div>
         </div>
       </div>
-      </div>
+      </motion.div>
       )}
 
       {/* SUBTAB CONTENT 3: KALENDER & PERINGATAN PIUTANG */}
       {activeSubTab === 'operasional' && (
-        <div className="space-y-6">
+        <motion.div 
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+          className="space-y-6"
+        >
           {/* LOW STOCK ALERT WIDGET */}
           {lowStockItems.length > 0 && (
             <motion.div 
               variants={itemVariants}
-              initial="hidden"
-              animate="visible"
-              className="bg-rose-50 p-5 rounded-2xl border border-rose-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 animate-in zoom-in-95 duration-500"
+              className="bg-rose-50 p-5 rounded-2xl border border-rose-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4"
             >
               <div className="flex items-center gap-4">
                 <div className="h-12 w-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center shadow-rose-100/50 shadow-lg border border-rose-200">
@@ -2334,18 +2349,19 @@ export function Dashboard(props: DashboardProps) {
           </div>
         </div>
       </div>
-      </div>
+      </motion.div>
       )}
 
       {activeSubTab === 'analisis_mendalam' && (
         <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
           className="space-y-6 pb-20"
         >
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* SCORECARD KESEHATAN FINANSIAL */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+            <motion.div variants={itemVariants} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
               <div className="p-5 border-b border-slate-50 bg-slate-50/50">
                 <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-emerald-600" />
@@ -2372,7 +2388,7 @@ export function Dashboard(props: DashboardProps) {
                   </p>
                 </div>
               </div>
-            </div>
+            </motion.div>
 
             {/* BREAKDOWN RASIO PROFITABILITAS */}
             <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">

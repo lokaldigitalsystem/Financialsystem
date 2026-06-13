@@ -66,6 +66,7 @@ import { DataValidationEngine } from './components/DataValidationEngine';
 import { TenantBilling } from './components/TenantBilling';
 import { SecurityAudit } from './components/SecurityAudit';
 import { UserGuide } from './components/UserGuide';
+import { LoadingOverlay } from "./components/LoadingOverlay";
 import { logSecurityEvent } from './utils/auditLogger';
 import { PLAN_DEFAULT_FEATURES } from './components/SaaSFeatureManagement';
 
@@ -572,12 +573,25 @@ export default function App() {
   }, [accessMode, isGlobalAdmin, koperasiId]);
 
   const [activePage, setActivePage] = useState<string>("dashboard");
+  const [globalLoading, setGlobalLoading] = useState(false);
+
+  // SIDE NAVIGATION CLICK HANDLER
+  const handleNavClick = (page: string, resetTabs: boolean = true) => {
+    if (activePage === page) return;
+    setGlobalLoading(true);
+    setTimeout(() => {
+      setActivePage(page);
+      if (resetTabs) setAnggotaActiveTab('daftar');
+      setGlobalLoading(false);
+    }, 450);
+  };
 
   // Shared state for navigation filters to relate COA, Jurnal, and Dashboard
   const [jurnalFilter, setJurnalFilter] = useState("");
   const [bukubesarInitialAccount, setBukubesarInitialAccount] = useState<string | undefined>(undefined);
   const [coaCategoryFilter, setCoaCategoryFilter] = useState("");
   const [coaSearchFilter, setCoaSearchFilter] = useState("");
+  const [anggotaActiveTab, setAnggotaActiveTab] = useState<"daftar" | "tagihan">("daftar");
 
   // Login Input Form states
   const [inputUser, setInputUser] = useState("");
@@ -2692,7 +2706,7 @@ export default function App() {
     }
   };
 
-  const handleAddStok = (kode: string, nama: string, hargaJual: number, hargaModal: number, initialQty: number) => {
+  const handleAddStok = (kode: string, nama: string, hargaJual: number, hargaModal: number, initialQty: number, tglInput?: string) => {
     const id = "st-" + (stokData.length + 1) + "-" + Math.random().toString(36).substr(2, 4);
     const newStok: StokItem = {
       id,
@@ -2700,14 +2714,15 @@ export default function App() {
       nama,
       hargaJual,
       qty: initialQty,
-      hargaModal
+      hargaModal,
+      tglInput: tglInput || new Date().toISOString().split('T')[0]
     };
     setStokData(prev => [...prev, newStok]);
 
     if (initialQty > 0) {
       const newHistori: StokHistoriEntry = {
         id: "log-init-" + Date.now(),
-        tgl: new Date().toISOString().split('T')[0],
+        tgl: tglInput || new Date().toISOString().split('T')[0],
         stokId: id,
         kodeBarang: kode,
         namaBarang: nama,
@@ -3696,11 +3711,16 @@ export default function App() {
   // MOUNT ACTIVE PAGE CONTROLLER
   const renderPage = () => {
     // Shared navigation helper
-    const handleDashboardNavigation = (page: string, jFilter?: string, cFilter?: string, cSearch?: string) => {
-      setActivePage(page);
-      if (jFilter !== undefined) setJurnalFilter(jFilter);
-      if (cFilter !== undefined) setCoaCategoryFilter(cFilter);
-      if (cSearch !== undefined) setCoaSearchFilter(cSearch);
+    const handleDashboardNavigation = (page: string, jFilter?: string, cFilter?: string, cSearch?: string, aTab?: "daftar" | "tagihan") => {
+      setGlobalLoading(true);
+      setTimeout(() => {
+        setActivePage(page);
+        if (jFilter !== undefined) setJurnalFilter(jFilter);
+        if (cFilter !== undefined) setCoaCategoryFilter(cFilter);
+        if (cSearch !== undefined) setCoaSearchFilter(cSearch);
+        setAnggotaActiveTab(aTab || "daftar");
+        setGlobalLoading(false);
+      }, 400);
     };
 
     switch (activePage) {
@@ -3833,6 +3853,7 @@ export default function App() {
             koperasiId={koperasiId}
             koperasiName={koperasiName}
             koperasiLogo={koperasiLogo}
+            initialTab={anggotaActiveTab}
           />
         );
       case "kasbank":
@@ -5378,9 +5399,7 @@ export default function App() {
             {isPagePermitted('stockopname') && (
               <button 
                 id="nav-stockopname"
-                onClick={() => {
-                  setActivePage('stockopname');
-                }}
+                onClick={() => handleNavClick('stockopname')}
                 title={isSidebarCollapsed ? "Stock Opname" : ""}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'stockopname' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
               >
@@ -5392,9 +5411,7 @@ export default function App() {
             {isPagePermitted('returpembelian') && (
               <button 
                 id="nav-returpembelian"
-                onClick={() => {
-                  setActivePage('returpembelian');
-                }}
+                onClick={() => handleNavClick('returpembelian')}
                 title={isSidebarCollapsed ? "Retur Pembelian" : ""}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'returpembelian' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
               >
@@ -5406,9 +5423,7 @@ export default function App() {
             {isPagePermitted('kontak') && (
               <button 
                 id="nav-kontak"
-                onClick={() => {
-                  setActivePage('kontak');
-                }}
+                onClick={() => handleNavClick('kontak')}
                 title={isSidebarCollapsed ? "Manajemen Kontak" : ""}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'kontak' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
               >
@@ -5419,9 +5434,7 @@ export default function App() {
             {isPagePermitted('anggota') && (
               <button 
                 id="nav-anggota"
-                onClick={() => {
-                  setActivePage('anggota');
-                }}
+                onClick={() => handleNavClick('anggota')}
                 title={isSidebarCollapsed ? "Daftar Anggota" : ""}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'anggota' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
               >
@@ -5437,9 +5450,7 @@ export default function App() {
                 {isPagePermitted('kasbank') && (
                   <button 
                     id="nav-kasbank"
-                    onClick={() => {
-                      setActivePage('kasbank');
-                    }}
+                    onClick={() => handleNavClick('kasbank')}
                     title={isSidebarCollapsed ? "Saldo Kas & Bank" : ""}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'kasbank' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                   >
@@ -5454,7 +5465,7 @@ export default function App() {
                     onClick={() => {
                       setCoaCategoryFilter("");
                       setCoaSearchFilter("");
-                      setActivePage('coa');
+                      handleNavClick('coa');
                     }}
                     title={isSidebarCollapsed ? "Chart of Accounts" : ""}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'coa' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
@@ -5467,9 +5478,7 @@ export default function App() {
                 {isPagePermitted('audit') && (
                   <button 
                     id="nav-audit"
-                    onClick={() => {
-                      setActivePage('audit');
-                    }}
+                    onClick={() => handleNavClick('audit')}
                     title={isSidebarCollapsed ? "Audit & Validasi" : ""}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'audit' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                   >
@@ -5481,9 +5490,7 @@ export default function App() {
                 {isPagePermitted('asettetap') && (
                   <button 
                     id="nav-asettetap"
-                    onClick={() => {
-                      setActivePage('asettetap');
-                    }}
+                    onClick={() => handleNavClick('asettetap')}
                     title={isSidebarCollapsed ? "Aset Tetap" : ""}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'asettetap' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                   >
@@ -5501,7 +5508,7 @@ export default function App() {
                 {isPagePermitted('invoice') && (
                   <button 
                     id="nav-invoice"
-                    onClick={() => setActivePage('invoice')}
+                    onClick={() => handleNavClick('invoice')}
                     title={isSidebarCollapsed ? "Faktur Tagihan" : ""}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'invoice' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                   >
@@ -5513,7 +5520,7 @@ export default function App() {
                 {isPagePermitted('rekappenjualan') && (
                   <button 
                     id="nav-rekappenjualan"
-                    onClick={() => setActivePage('rekappenjualan')}
+                    onClick={() => handleNavClick('rekappenjualan')}
                     title={isSidebarCollapsed ? "Rekap Penjualan" : ""}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'rekappenjualan' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                   >
@@ -5525,7 +5532,7 @@ export default function App() {
                 {isPagePermitted('laporan') && (
                   <button 
                     id="nav-laporan"
-                    onClick={() => setActivePage('laporan')}
+                    onClick={() => handleNavClick('laporan')}
                     title={isSidebarCollapsed ? "Laporan Keuangan" : ""}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'laporan' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                   >
@@ -5541,7 +5548,7 @@ export default function App() {
                 {!isSidebarCollapsed && <div className="px-3 pt-4 pb-1 text-[10px] font-extrabold text-slate-500 tracking-wider uppercase">Konfigurasi</div>}
                 <button 
                   id="nav-pengaturan"
-                  onClick={() => setActivePage('pengaturan')}
+                  onClick={() => handleNavClick('pengaturan')}
                   title={isSidebarCollapsed ? "Pengaturan" : ""}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'pengaturan' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                 >
@@ -5565,7 +5572,7 @@ export default function App() {
             {!isSidebarCollapsed && <div className="px-3 pt-2 pb-1 text-[10px] font-extrabold text-slate-500 tracking-wider uppercase">Bantuan</div>}
             <button 
               id="nav-support"
-              onClick={() => setActivePage('support')}
+              onClick={() => handleNavClick('support')}
               title={isSidebarCollapsed ? "Bantuan" : ""}
               className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'support' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
             >
@@ -5574,7 +5581,7 @@ export default function App() {
 
             <button 
               id="nav-user-guide"
-              onClick={() => setActivePage('user_guide')}
+              onClick={() => handleNavClick('user_guide')}
               title={isSidebarCollapsed ? "Panduan Pengguna" : ""}
               className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'user_guide' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
             >
@@ -5584,7 +5591,7 @@ export default function App() {
             {!isGlobalAdmin && (
               <button 
                 id="nav-saas-billing"
-                onClick={() => setActivePage('saas_billing')}
+                onClick={() => handleNavClick('saas_billing')}
                 title={isSidebarCollapsed ? "Billing" : ""}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors ${activePage === 'saas_billing' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
               >
@@ -5597,7 +5604,7 @@ export default function App() {
                 {!isSidebarCollapsed && <div className="px-3 pb-2 text-[10px] font-black text-indigo-400 tracking-widest uppercase">Admin SaaS</div>}
                 <button 
                   id="nav-superadmin"
-                  onClick={() => setActivePage('superadmin')}
+                  onClick={() => handleNavClick('superadmin')}
                   title={isSidebarCollapsed ? "Admin SaaS" : ""}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-all ${activePage === 'superadmin' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50 scale-105' : 'text-indigo-400 hover:text-white hover:bg-indigo-900/40'} ${isSidebarCollapsed ? 'md:justify-center' : ''}`}
                 >
@@ -5638,6 +5645,23 @@ export default function App() {
 
       {/* CORE DISPLAY WINDOW */}
       <main className={`flex-1 p-5 md:p-8 overflow-y-auto relative transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-900 text-slate-100' : 'bg-slate-100 text-slate-900'}`}>
+        <AnimatePresence mode="wait">
+          {globalLoading ? (
+            <LoadingOverlay key="loading" />
+          ) : (
+            <motion.div
+              key={activePage}
+              initial={{ opacity: 0, scale: 0.98, y: 5 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 1.02, y: -5 }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="h-full"
+            >
+              {renderPage()}
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
         {/* Support Notification Banner for Tenant */}
         {isTenantRemoteControl && !isSupportMode && (
           <div className="mb-6 bg-rose-600 text-white px-6 py-4 rounded-[2rem] flex flex-col md:flex-row items-center justify-between shadow-2xl relative z-10 border-b-4 border-rose-800 animate-in slide-in-from-top-4 duration-500 gap-4">

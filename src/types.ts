@@ -42,6 +42,7 @@ export interface StokItem {
   hargaJual: number;
   qty: number;
   hargaModal?: number;
+  tglInput?: string;
 }
 
 export interface StokHistoriEntry {
